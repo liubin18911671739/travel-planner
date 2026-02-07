@@ -3,11 +3,15 @@ import { createServerClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import {
   KnowledgePackCreateRequestSchema,
-  type KnowledgePackListResponse,
-  type KnowledgePackResponse,
-  KnowledgePackUpdateRequestSchema,
   type ErrorResponse,
 } from '@/lib/knowledge/schemas'
+
+type PackRow = {
+  id: string
+  name: string
+  description: string | null
+  file_ids?: string[]
+}
 
 /**
  * GET /api/knowledge/packs
@@ -65,12 +69,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Add file count to each pack
-    const packsWithCounts = (packs || []).map((pack: any) => ({
+    const packsWithCounts = ((packs as PackRow[] | null) || []).map((pack) => ({
       ...pack,
       fileCount: pack.file_ids?.length || 0,
     }))
 
-    const response: KnowledgePackListResponse = {
+    const response = {
       packs: packsWithCounts,
       total: count || 0,
     }
@@ -141,7 +145,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const validFileIds = (files || []).map((f: any) => f.id)
+    const validFileIds = ((files as Array<{ id: unknown }> | null) || [])
+      .map((f) => f.id)
+      .filter((id): id is string => typeof id === 'string')
 
     if (validFileIds.length !== fileIds.length) {
       return NextResponse.json(
@@ -161,7 +167,7 @@ export async function POST(request: NextRequest) {
         name,
         description: description || null,
         file_ids: validFileIds,
-      } as any)
+      })
       .select()
       .single()
 
@@ -172,9 +178,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const response: KnowledgePackResponse = {
+    const packRow = pack as PackRow | null
+    const response = {
       pack: {
-        ...(pack as any),
+        ...(packRow || {}),
         fileCount: validFileIds.length,
       },
     }

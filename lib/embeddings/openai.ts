@@ -19,15 +19,42 @@ import type {
   EmbeddingsProviderConfig,
 } from './provider'
 
+type OpenAIEmbeddingsCreateResponse = {
+  data: Array<{ embedding: number[] }>
+}
+
+type OpenAIClientLike = {
+  embeddings: {
+    create: (params: {
+      model: OpenAIEmbeddingModel
+      input: string[]
+      dimensions: number
+      encoding_format: 'float'
+    }) => Promise<OpenAIEmbeddingsCreateResponse>
+  }
+}
+
+type OpenAIConstructorLike = new (params: { apiKey: string }) => OpenAIClientLike
+
+function isOpenAIConstructorLike(value: unknown): value is OpenAIConstructorLike {
+  return typeof value === 'function'
+}
+
 // Dynamic import to avoid build errors when package is not installed
-// @ts-ignore - openai is an optional dependency
-let OpenAI: any = null
+let OpenAI: OpenAIConstructorLike | null = null
 
 async function loadOpenAI() {
   if (!OpenAI) {
     try {
-      // @ts-ignore - openai is an optional dependency
-      const openaiModule = await import('openai')
+      // Use runtime dynamic import to avoid bundler resolving optional dependency at build time.
+      const dynamicImport = new Function(
+        'specifier',
+        'return import(specifier)'
+      ) as (specifier: string) => Promise<{ default: unknown }>
+      const openaiModule = await dynamicImport('openai')
+      if (!isOpenAIConstructorLike(openaiModule.default)) {
+        throw new Error('Invalid OpenAI module export')
+      }
       OpenAI = openaiModule.default
     } catch {
       throw new Error(
@@ -77,7 +104,7 @@ const DEFAULT_RETRY_DELAY_MS = 1000
  * OpenAI Embeddings Provider Implementation.
  */
 export class OpenAIEmbeddingsProvider implements EmbeddingsProvider {
-  private client: any
+  private client: OpenAIClientLike | null
   private readonly model: OpenAIEmbeddingModel
   private readonly dimension: number
   private readonly maxTokens: number
@@ -163,6 +190,10 @@ export class OpenAIEmbeddingsProvider implements EmbeddingsProvider {
     attempt: number = 1
   ): Promise<Embedding[]> {
     try {
+      if (!this.client) {
+        throw new Error('OpenAI client is not initialized')
+      }
+
       const response = await this.client.embeddings.create({
         model: this.model,
         input: texts,
@@ -170,7 +201,7 @@ export class OpenAIEmbeddingsProvider implements EmbeddingsProvider {
         encoding_format: 'float',
       })
 
-      return response.data.map((item: any) => ({
+      return response.data.map((item) => ({
         vector: item.embedding,
         dimension: this.dimension,
       }))

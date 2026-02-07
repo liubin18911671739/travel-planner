@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { jobRepository } from '@/lib/jobs/repository'
+import { getSignedUrl } from '@/lib/storage/helper'
+import { DEFAULT_SIGNED_URL_EXPIRES_IN } from '@/lib/storage/buckets'
+
+type StatusResponse = {
+  jobId: string
+  status: 'pending' | 'running' | 'done' | 'failed'
+  progress: number
+  logs: Array<{ level: string; message: string; timestamp: string }>
+  result?: Record<string, unknown>
+  error?: string | null
+}
 
 /**
  * GET /api/merch/status?jobId={jobId}
@@ -52,7 +63,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build response
-    const response: any = {
+    const response: StatusResponse = {
       jobId: job.id,
       status: job.status,
       progress: job.progress,
@@ -61,7 +72,46 @@ export async function GET(request: NextRequest) {
 
     // Add result if done
     if (job.status === 'done' && job.output) {
-      response.result = job.output
+      const output = job.output
+      const designId = typeof output.designId === 'string' ? output.designId : null
+
+      if (designId) {
+        const { data: design } = await supabase
+          .from('merch_designs')
+          .select('id, pattern_storage_path, mockup_storage_paths')
+          .eq('id', designId)
+          .eq('user_id', user.id)
+          .single()
+
+        if (design) {
+          const patternStoragePath = design.pattern_storage_path
+          const patternUrl = patternStoragePath
+            ? await getSignedUrl(
+                'MERCH',
+                patternStoragePath,
+                DEFAULT_SIGNED_URL_EXPIRES_IN
+              )
+            : null
+
+          const mockupPaths = design.mockup_storage_paths || []
+          const mockupUrls = await Promise.all(
+            mockupPaths.map((path) =>
+              getSignedUrl('MERCH', path, DEFAULT_SIGNED_URL_EXPIRES_IN)
+            )
+          )
+
+          response.result = {
+            ...output,
+            designId,
+            patternUrl,
+            mockupUrls,
+          }
+        } else {
+          response.result = output
+        }
+      } else {
+        response.result = output
+      }
     }
 
     // Add error if failed

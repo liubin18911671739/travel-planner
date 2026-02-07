@@ -25,6 +25,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_itinerary_kind_unique
 ALTER TABLE public.artifacts ENABLE ROW LEVEL SECURITY;
 
 -- Users can read artifacts for their own itineraries
+DROP POLICY IF EXISTS "Users can view own itinerary artifacts" ON public.artifacts;
 CREATE POLICY "Users can view own itinerary artifacts"
     ON public.artifacts FOR SELECT
     USING (
@@ -34,6 +35,7 @@ CREATE POLICY "Users can view own itinerary artifacts"
     );
 
 -- Service role can manage all artifacts
+DROP POLICY IF EXISTS "Service role can manage all artifacts" ON public.artifacts;
 CREATE POLICY "Service role can manage all artifacts"
     ON public.artifacts FOR ALL
     USING (auth.jwt() ->> 'role' = 'service_role')

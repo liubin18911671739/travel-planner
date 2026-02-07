@@ -64,7 +64,7 @@ export { serve }
  */
 export async function sendEvent(
   name: string,
-  data: Record<string, any>
+  data: Record<string, unknown>
 ): Promise<{ ids: string[] }> {
   return await getInngestClient().send({
     name,
@@ -90,7 +90,7 @@ export const inngestEvents = {
       destination: string
       durationDays: number
       knowledgePackIds: string[]
-      settings: Record<string, any>
+      settings: Record<string, unknown>
     }) => sendEvent('itineraries/generate', data),
   },
   merch: {
@@ -103,6 +103,7 @@ export const inngestEvents = {
       colorMood: string
       density: string
       styleLock: string
+      itineraryId?: string
     }) => sendEvent('merch/generate', data),
   },
   exports: {

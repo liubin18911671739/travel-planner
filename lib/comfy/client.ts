@@ -31,7 +31,7 @@ export interface ItineraryContext {
   destination: string
   highlights?: string[]
   themes?: string[]
-  settings?: Record<string, any>
+  settings?: Record<string, unknown>
 }
 
 /**
@@ -45,7 +45,7 @@ export type ItineraryContextOrNull = ItineraryContext | null | undefined
 export interface GenerateMockupsOptions {
   patternImageUrl: string
   productType: 'mug' | 'phone_case' | 'tshirt'
-  views: ('front' | 'side' | 'context')[]
+  views: ('front' | 'side' | 'back' | 'context')[]
   size?: string // For phone case: 'iPhone 14', 'iPhone 15', etc.
 }
 
@@ -55,7 +55,7 @@ export interface GenerateMockupsOptions {
 export interface ComfyResult {
   imageUrl: string
   imageBuffer: Buffer
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -64,8 +64,55 @@ export interface ComfyResult {
 interface PromptStatus {
   status: 'pending' | 'processing' | 'completed' | 'failed'
   prompt_id: string
-  outputs?: Array<{ url: string; metadata?: any }>
+  outputs?: Array<{ url: string; metadata?: Record<string, unknown> }>
   error?: string
+}
+
+type PatternStylePreset = {
+  sampler_name: string
+  scheduler: string
+}
+
+type MockupTemplate = {
+  width: number
+  height: number
+  template_path: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isPromptStatus(value: unknown): value is PromptStatus {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  if (
+    value.status !== 'pending' &&
+    value.status !== 'processing' &&
+    value.status !== 'completed' &&
+    value.status !== 'failed'
+  ) {
+    return false
+  }
+
+  if (typeof value.prompt_id !== 'string') {
+    return false
+  }
+
+  if (value.outputs !== undefined) {
+    if (!Array.isArray(value.outputs)) {
+      return false
+    }
+    for (const output of value.outputs) {
+      if (!isRecord(output) || typeof output.url !== 'string') {
+        return false
+      }
+    }
+  }
+
+  return value.error === undefined || typeof value.error === 'string'
 }
 
 /**
@@ -139,7 +186,11 @@ export class ComfyClient {
         )
       }
 
-      const { prompt_id } = await response.json()
+      const payload = await response.json()
+      if (!isRecord(payload) || typeof payload.prompt_id !== 'string') {
+        throw new ComfyError('Invalid pattern generation response')
+      }
+      const { prompt_id } = payload
 
       // Wait for completion and download result
       return await this.waitForResult(prompt_id)
@@ -175,7 +226,11 @@ export class ComfyClient {
         )
       }
 
-      const { prompt_id } = await response.json()
+      const payload = await response.json()
+      if (!isRecord(payload) || typeof payload.prompt_id !== 'string') {
+        throw new ComfyError('Invalid mockup generation response')
+      }
+      const { prompt_id } = payload
 
       // Wait for all mockups to complete
       return await this.waitForResults(prompt_id, options.views.length)
@@ -275,14 +330,20 @@ export class ComfyClient {
       throw new ComfyError(`Failed to get prompt status: ${response.statusText}`)
     }
 
-    return await response.json()
+    const payload = await response.json()
+    if (!isPromptStatus(payload)) {
+      throw new ComfyError('Invalid prompt status payload')
+    }
+    return payload
   }
 
   /**
    * Build ComfyUI workflow for pattern generation.
    * This is a template - customize based on your ComfyUI setup.
    */
-  private buildPatternWorkflow(options: GeneratePatternOptions): any {
+  private buildPatternWorkflow(
+    options: GeneratePatternOptions
+  ): Record<string, unknown> {
     // Map density to node parameters
     const densityMap = {
       sparse: { steps: 10, cfg_scale: 5 },
@@ -291,7 +352,7 @@ export class ComfyClient {
     }
 
     // Map style to style presets
-    const stylePresets: Record<string, any> = {
+    const stylePresets: Record<string, PatternStylePreset> = {
       flat: { sampler_name: 'euler', scheduler: 'simple' },
       vintage: { sampler_name: 'ddim', scheduler: 'karras' },
       ink: { sampler_name: 'uni_pc', scheduler: 'normal' },
@@ -366,9 +427,11 @@ export class ComfyClient {
   /**
    * Build ComfyUI workflow for mockup generation.
    */
-  private buildMockupWorkflow(options: GenerateMockupsOptions): any {
+  private buildMockupWorkflow(
+    options: GenerateMockupsOptions
+  ): Record<string, unknown> {
     // Product-specific templates
-    const productTemplates: Record<string, any> = {
+    const productTemplates: Record<string, MockupTemplate> = {
       mug: {
         width: 1024,
         height: 1024,

@@ -1,5 +1,4 @@
 import { EmbeddingsProvider, Embedding, EmbeddingsProviderConfig } from './provider'
-// @ts-ignore - openai is an optional dependency
 import { createOpenAIEmbeddingsProviderSync, type OpenAIEmbeddingsConfig } from './openai'
 
 export type EmbeddingProviderType = 'stub' | 'openai' | 'cohere'

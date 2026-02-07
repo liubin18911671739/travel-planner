@@ -2,31 +2,75 @@ import { inngest } from '@/lib/queue/client'
 import { jobRepository } from '@/lib/jobs/repository'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { ComfyClient } from '@/lib/comfy/client'
-import { uploadFile } from '@/lib/storage/helper'
-import { BUCKETS } from '@/lib/storage/buckets'
+import { getSignedUrl, uploadFile } from '@/lib/storage/helper'
+import { DEFAULT_SIGNED_URL_EXPIRES_IN } from '@/lib/storage/buckets'
 import type { ItineraryContext } from '@/lib/merch/adapters'
+import type { ArtifactRow, ItineraryRow } from '@/lib/db/types'
 
 type ViewType = 'front' | 'side' | 'back' | 'context'
+
+type ItineraryContextRow = Pick<
+  ItineraryRow,
+  'destination' | 'content' | 'settings'
+>
+
+type SerializedBuffer = { type: 'Buffer'; data: number[] }
+type ArtifactUpsertRow = Pick<ArtifactRow, 'id' | 'kind' | 'storage_path'>
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function toSettingsRecord(
+  value: unknown
+): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
+}
+
+function toBuffer(value: Buffer | SerializedBuffer): Buffer {
+  if (Buffer.isBuffer(value)) {
+    return value
+  }
+
+  if (value.type === 'Buffer' && Array.isArray(value.data)) {
+    return Buffer.from(value.data)
+  }
+
+  throw new Error('Invalid image buffer payload')
+}
 
 /**
  * Extract highlights from itinerary content for themed pattern generation.
  */
-function extractItineraryHighlights(content: any): string[] {
+function extractItineraryHighlights(content: unknown): string[] {
   const highlights: string[] = []
 
-  if (!content) return highlights
+  if (!isRecord(content)) return highlights
 
   // Extract from days
-  if (content.days && Array.isArray(content.days)) {
-    for (const day of content.days) {
+  const days = Array.isArray(content.days) ? content.days : []
+  if (days.length > 0) {
+    for (const day of days) {
+      if (!isRecord(day)) {
+        continue
+      }
+
       // Extract locations
-      if (day.location) {
+      if (typeof day.location === 'string' && day.location.length > 0) {
         highlights.push(day.location)
       }
       // Extract activity themes
-      if (day.activities && Array.isArray(day.activities)) {
-        for (const activity of day.activities) {
-          const act = activity.activity?.toLowerCase() || ''
+      const activities = Array.isArray(day.activities) ? day.activities : []
+      if (activities.length > 0) {
+        for (const activity of activities) {
+          if (!isRecord(activity)) {
+            continue
+          }
+
+          const act =
+            typeof activity.activity === 'string'
+              ? activity.activity.toLowerCase()
+              : ''
           if (act.includes('museum') || act.includes('博物馆')) {
             highlights.push('museum')
           }
@@ -83,24 +127,35 @@ export const generateMerch = inngest.createFunction(
 
       await jobRepository.logInfo(jobId, `获取行程上下文: ${itineraryId}`)
 
-      const { data: itinerary } = await (supabaseAdmin
-        .from('itineraries') as any)
+      const { data: itinerary } = await supabaseAdmin
+        .from('itineraries')
         .select('destination, content, settings')
         .eq('id', itineraryId)
         .single()
 
-      if (!itinerary) {
+      if (!itinerary || typeof itinerary.destination !== 'string') {
         await jobRepository.logWarning(jobId, '未找到行程，使用默认主题')
         return { itineraryContext: null }
       }
 
-      const highlights = extractItineraryHighlights(itinerary.content)
+      const typedItinerary: ItineraryContextRow = {
+        destination: itinerary.destination,
+        content: itinerary.content,
+        settings: itinerary.settings,
+      }
+
+      const settingsRecord = toSettingsRecord(typedItinerary.settings)
+      const highlights = extractItineraryHighlights(typedItinerary.content)
+      const themesRaw = settingsRecord?.themes
+      const themes = Array.isArray(themesRaw)
+        ? themesRaw.filter((item): item is string => typeof item === 'string')
+        : undefined
 
       const context: ItineraryContext = {
-        destination: itinerary.destination,
+        destination: typedItinerary.destination,
         highlights,
-        themes: itinerary.settings?.themes,
-        settings: itinerary.settings,
+        themes,
+        settings: settingsRecord,
       }
 
       await jobRepository.logInfo(
@@ -155,14 +210,17 @@ export const generateMerch = inngest.createFunction(
 
       const comfy = new ComfyClient()
 
-      // Get public URL for pattern (ComfyUI will download it)
-      // In production, generate a signed URL
-      const patternUrl = `https://storage.yourdomain.com/${patternPath}`
+      // Generate short-lived signed URL for ComfyUI download
+      const patternUrl = await getSignedUrl(
+        'MERCH',
+        patternPath,
+        DEFAULT_SIGNED_URL_EXPIRES_IN
+      )
 
       const results = await comfy.generateMockups({
         patternImageUrl: patternUrl,
-        productType: productType as any,
-        views: views as any,
+        productType,
+        views,
       })
 
       return { mockupResults: results }
@@ -180,9 +238,7 @@ export const generateMerch = inngest.createFunction(
         const path = `merch/mockups/${designId}_${views[i]}.png`
 
         // Convert Buffer-like object to Buffer if needed
-        const buffer = Buffer.isBuffer(mockup.imageBuffer)
-          ? mockup.imageBuffer
-          : Buffer.from(mockup.imageBuffer as any)
+        const buffer = toBuffer(mockup.imageBuffer)
 
         await uploadFile('MERCH', path, buffer, 'image/png')
         paths.push(path)
@@ -194,8 +250,8 @@ export const generateMerch = inngest.createFunction(
     // Step 6: Finalize and save artifacts
     await step.run('finalize', async () => {
       // Update merch design record
-      await (supabaseAdmin
-        .from('merch_designs') as any)
+      await supabaseAdmin
+        .from('merch_designs')
         .update({
           pattern_storage_path: patternPath,
           mockup_storage_paths: mockupPaths,
@@ -204,9 +260,7 @@ export const generateMerch = inngest.createFunction(
         .eq('id', designId)
 
       // Store artifacts in artifacts table
-      const patternBuffer = Buffer.isBuffer(patternResult.imageBuffer)
-        ? patternResult.imageBuffer
-        : Buffer.from(patternResult.imageBuffer as any)
+      const patternBuffer = toBuffer(patternResult.imageBuffer)
 
       const artifactRecords = [
         {
@@ -229,16 +283,33 @@ export const generateMerch = inngest.createFunction(
       ]
 
       // Upsert artifacts (handles retries safely)
-      await (supabaseAdmin
-        .from('artifacts') as any)
-        .upsert(artifactRecords, { onConflict: 'merch_design_id,kind' })
+      const { data: upsertedArtifacts, error: artifactsError } = await supabaseAdmin
+        .from('artifacts')
+        .upsert(artifactRecords, {
+          onConflict: 'merch_design_id,kind,storage_path',
+        })
+        .select('id, kind, storage_path')
+
+      if (artifactsError) {
+        throw artifactsError
+      }
+
+      const artifactRows = (upsertedArtifacts || []) as ArtifactUpsertRow[]
+      const patternArtifact = artifactRows.find(
+        (row) => row.kind === 'pattern'
+      )
+      const mockupArtifactIds = artifactRows
+        .filter((row) => row.kind === 'mockup')
+        .map((row) => row.id)
 
       await jobRepository.logInfo(jobId, '商品设计生成完成！')
       await jobRepository.updateStatus(jobId, 'done', 100, {
         designId,
-        patternPath,
-        mockupPaths,
-        artifactsCount: artifactRecords.length,
+        patternStoragePath: patternPath,
+        mockupStoragePaths: mockupPaths,
+        patternArtifactId: patternArtifact?.id || null,
+        mockupArtifactIds,
+        artifactsCount: artifactRows.length || artifactRecords.length,
       })
     })
 

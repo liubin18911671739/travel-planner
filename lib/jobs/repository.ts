@@ -1,4 +1,12 @@
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import type {
+  JobLogRow,
+  JobRow,
+  Json,
+  TableInsert,
+  TableUpdate,
+} from '@/lib/db/types'
+import { isRecord } from '@/lib/db/types'
 
 /**
  * Job status types.
@@ -25,9 +33,9 @@ export type LogLevel = 'info' | 'warning' | 'error'
 export interface CreateJobOptions {
   userId: string
   type: JobType
-  input: Record<string, any>
+  input: Record<string, unknown>
   idempotencyKey?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -38,11 +46,11 @@ export interface Job {
   userId: string
   type: JobType
   status: JobStatus
-  input: Record<string, any>
-  output: Record<string, any> | null
+  input: Record<string, unknown>
+  output: Record<string, unknown> | null
   errorMessage: string | null
   progress: number
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   createdAt: string
   updatedAt: string
   startedAt: string | null
@@ -58,7 +66,7 @@ export interface JobLog {
   level: LogLevel
   message: string
   timestamp: string
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
 }
 
 /**
@@ -86,6 +94,45 @@ export class JobError extends Error {
  * Repository for job management and progress tracking.
  */
 export class JobRepository {
+  private toJobType(value: unknown): JobType {
+    if (
+      value === 'index_knowledge' ||
+      value === 'generate_itinerary' ||
+      value === 'generate_merch' ||
+      value === 'export_gamma'
+    ) {
+      return value
+    }
+    return 'generate_itinerary'
+  }
+
+  private toJobStatus(value: unknown): JobStatus {
+    if (
+      value === 'pending' ||
+      value === 'running' ||
+      value === 'done' ||
+      value === 'failed'
+    ) {
+      return value
+    }
+    return 'pending'
+  }
+
+  private jsonToRecord(value: unknown): Record<string, unknown> {
+    return isRecord(value) ? value : {}
+  }
+
+  private toJson(value: unknown): Json {
+    return JSON.parse(JSON.stringify(value)) as Json
+  }
+
+  private toLogLevel(value: unknown): LogLevel {
+    if (value === 'info' || value === 'warning' || value === 'error') {
+      return value
+    }
+    return 'info'
+  }
+
   /**
    * Create a new job.
    *
@@ -93,17 +140,19 @@ export class JobRepository {
    * @returns Job ID
    */
   async create(options: CreateJobOptions): Promise<string> {
+    const payload: TableInsert<'jobs'> = {
+      user_id: options.userId,
+      type: options.type,
+      input: this.toJson(options.input),
+      idempotency_key: options.idempotencyKey || null,
+      status: 'pending',
+      progress: 0,
+      metadata: this.toJson(options.metadata || {}),
+    }
+
     const { data, error } = await supabaseAdmin
       .from('jobs')
-      .insert({
-        user_id: options.userId,
-        type: options.type,
-        input: options.input,
-        idempotency_key: options.idempotencyKey,
-        status: 'pending',
-        progress: 0,
-        metadata: options.metadata || {},
-      } as any)
+      .insert(payload)
       .select('id')
       .single()
 
@@ -115,16 +164,21 @@ export class JobRepository {
           .from('jobs')
           .select('id')
           .eq('idempotency_key', options.idempotencyKey)
-          .single() as any
+          .single()
 
-        if (existing.data) {
-          return existing.data.id
+        const existingData = existing.data
+        if (existingData) {
+          return existingData.id
         }
       }
       throw new JobError(`Failed to create job: ${error.message}`, error.code)
     }
 
-    return (data as any)?.id
+    if (!data) {
+      throw new JobError('Failed to create job: no row returned')
+    }
+
+    return data.id
   }
 
   /**
@@ -225,17 +279,17 @@ export class JobRepository {
     jobId: string,
     status: JobStatus,
     progress: number,
-    output?: Record<string, any>,
+    output?: Record<string, unknown>,
     errorMessage?: string
   ): Promise<void> {
-    const updates: Record<string, any> = {
+    const updates: TableUpdate<'jobs'> = {
       status,
       progress: Math.max(0, Math.min(100, progress)), // Clamp to 0-100
       updated_at: new Date().toISOString(),
     }
 
     if (output !== undefined) {
-      updates.output = output
+      updates.output = this.toJson(output)
     }
 
     if (errorMessage !== undefined) {
@@ -260,8 +314,8 @@ export class JobRepository {
       }
     }
 
-    const { error } = await (supabaseAdmin
-      .from('jobs') as any)
+    const { error } = await supabaseAdmin
+      .from('jobs')
       .update(updates)
       .eq('id', jobId)
 
@@ -297,16 +351,18 @@ export class JobRepository {
     jobId: string,
     level: LogLevel,
     message: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): Promise<void> {
+    const payload: TableInsert<'job_logs'> = {
+      job_id: jobId,
+      level,
+      message,
+      metadata: this.toJson(metadata || {}),
+    }
+
     const { error } = await supabaseAdmin
       .from('job_logs')
-      .insert({
-        job_id: jobId,
-        level,
-        message,
-        metadata: metadata || {},
-      } as any)
+      .insert(payload)
 
     if (error) {
       throw new JobError(`Failed to add job log: ${error.message}`)
@@ -316,21 +372,21 @@ export class JobRepository {
   /**
    * Add an info log entry.
    */
-  async logInfo(jobId: string, message: string, metadata?: Record<string, any>): Promise<void> {
+  async logInfo(jobId: string, message: string, metadata?: Record<string, unknown>): Promise<void> {
     return this.addLog(jobId, 'info', message, metadata)
   }
 
   /**
    * Add a warning log entry.
    */
-  async logWarning(jobId: string, message: string, metadata?: Record<string, any>): Promise<void> {
+  async logWarning(jobId: string, message: string, metadata?: Record<string, unknown>): Promise<void> {
     return this.addLog(jobId, 'warning', message, metadata)
   }
 
   /**
    * Add an error log entry.
    */
-  async logError(jobId: string, message: string, metadata?: Record<string, any>): Promise<void> {
+  async logError(jobId: string, message: string, metadata?: Record<string, unknown>): Promise<void> {
     return this.addLog(jobId, 'error', message, metadata)
   }
 
@@ -365,7 +421,12 @@ export class JobRepository {
       throw new JobError(`Failed to get logs: ${error.message}`)
     }
 
-    return data || []
+    const rows = (data || []) as JobLogRow[]
+    return rows.map((row) => ({
+      level: this.toLogLevel(row.level),
+      message: row.message,
+      timestamp: row.timestamp || new Date(0).toISOString(),
+    }))
   }
 
   /**
@@ -387,19 +448,19 @@ export class JobRepository {
   /**
    * Map database record to Job interface.
    */
-  private mapJob(data: any): Job {
+  private mapJob(data: JobRow): Job {
     return {
       id: data.id,
       userId: data.user_id,
-      type: data.type,
-      status: data.status,
-      input: data.input,
-      output: data.output,
+      type: this.toJobType(data.type),
+      status: this.toJobStatus(data.status),
+      input: this.jsonToRecord(data.input),
+      output: isRecord(data.output) ? data.output : null,
       errorMessage: data.error_message,
-      progress: data.progress,
-      metadata: data.metadata,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
+      progress: data.progress || 0,
+      metadata: this.jsonToRecord(data.metadata),
+      createdAt: data.created_at || new Date(0).toISOString(),
+      updatedAt: data.updated_at || new Date(0).toISOString(),
       startedAt: data.started_at,
       completedAt: data.completed_at,
     }

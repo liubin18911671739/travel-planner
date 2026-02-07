@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 
+type KnowledgeFileListRow = {
+  id: string
+  name: string
+  file_type: string
+  file_size: number | null
+  status: string
+  chunk_count: number | null
+  created_at: string
+  last_indexed_at: string | null
+}
+
 /**
  * GET /api/knowledge/list
  *
@@ -51,13 +62,15 @@ export async function GET(request: NextRequest) {
       throw error
     }
 
-    const files = (data || []).map((file) => ({
+    const rows = (data || []) as KnowledgeFileListRow[]
+
+    const files = rows.map((file) => ({
       id: file.id,
       name: file.name,
       fileType: file.file_type,
-      fileSize: file.file_size,
+      fileSize: file.file_size ?? 0,
       status: file.status,
-      chunkCount: file.chunk_count,
+      chunkCount: file.chunk_count ?? 0,
       uploadedAt: file.created_at,
       lastIndexedAt: file.last_indexed_at,
     }))

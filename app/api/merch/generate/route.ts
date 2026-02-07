@@ -6,6 +6,17 @@ import { inngestEvents } from '@/lib/queue/client'
 import { checkQuota, incrementQuota } from '@/lib/middleware/quota'
 import { randomUUID } from 'crypto'
 
+type MerchGenerateBody = {
+  productType: 'mug' | 'phone_case' | 'tshirt'
+  size?: string
+  themeKeywords: string[]
+  colorMood: 'warm' | 'cool' | 'natural' | 'elegant' | 'vibrant'
+  density: 'sparse' | 'medium' | 'dense'
+  styleLock: 'flat' | 'vintage' | 'ink' | 'modern_minimal'
+  itineraryId?: string
+  idempotencyKey?: string
+}
+
 /**
  * POST /api/merch/generate
  *
@@ -56,7 +67,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
+    const body = (await request.json()) as Partial<MerchGenerateBody>
     const {
       productType,
       size,
@@ -64,6 +75,7 @@ export async function POST(request: NextRequest) {
       colorMood,
       density,
       styleLock,
+      itineraryId,
       idempotencyKey,
     } = body
 
@@ -111,11 +123,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (itineraryId) {
+      const { data: itinerary, error: itineraryError } = await supabase
+        .from('itineraries')
+        .select('id')
+        .eq('id', itineraryId)
+        .eq('user_id', userId)
+        .single()
+
+      if (itineraryError || !itinerary) {
+        return NextResponse.json(
+          { error: 'Invalid itineraryId' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Create merch design record
     const designId = randomUUID()
     const designName = `${themeKeywords.join(' ')} ${productType}`
 
-    const { data: design, error: designError } = await supabaseAdmin
+    const { error: designError } = await supabaseAdmin
       .from('merch_designs')
       .insert({
         id: designId,
@@ -127,9 +155,9 @@ export async function POST(request: NextRequest) {
         density,
         style_lock: styleLock,
         status: 'generating',
-      } as any)
+      })
       .select('id')
-      .single() as any
+      .single()
 
     if (designError) {
       throw designError
@@ -147,13 +175,14 @@ export async function POST(request: NextRequest) {
         colorMood,
         density,
         styleLock,
+        itineraryId,
       },
       idempotencyKey,
     })
 
     // Update design with job reference
-    await (supabaseAdmin
-      .from('merch_designs') as any)
+    await supabaseAdmin
+      .from('merch_designs')
       .update({ job_id: jobId })
       .eq('id', designId)
 
@@ -167,6 +196,7 @@ export async function POST(request: NextRequest) {
       colorMood,
       density,
       styleLock,
+      itineraryId,
     })
 
     // Increment quota

@@ -3,8 +3,13 @@ import { jobRepository } from '@/lib/jobs/repository'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { downloadFile } from '@/lib/storage/helper'
 import { createEmbeddingsProvider, EmbeddingProviderType } from '@/lib/embeddings/stub'
-import { extractText, cleanExtractedText } from '@/lib/knowledge/extraction'
+import {
+  extractText,
+  cleanExtractedText,
+  type FileType,
+} from '@/lib/knowledge/extraction'
 import { splitIntoChunks, type ChunkingOptions } from '@/lib/knowledge/chunking'
+import type { KnowledgeFileRow } from '@/lib/db/types'
 
 /**
  * Knowledge Indexing Inngest Function
@@ -33,13 +38,45 @@ const CHUNKING_OPTIONS: ChunkingOptions = {
 // Embedding provider type from env (default to stub for development)
 const EMBEDDING_PROVIDER_TYPE = (process.env.EMBEDDING_PROVIDER || 'stub') as EmbeddingProviderType
 
-interface KnowledgeFile {
-  id: string
-  user_id: string
-  name: string
-  file_type: string
-  storage_path: string
-  metadata?: Record<string, any>
+type KnowledgeFile = Pick<
+  KnowledgeFileRow,
+  'id' | 'user_id' | 'name' | 'file_type' | 'storage_path' | 'metadata'
+>
+
+type SerializedBuffer = { type: 'Buffer'; data: number[] }
+
+function normalizeBuffer(buffer: Buffer | SerializedBuffer): Buffer {
+  if (Buffer.isBuffer(buffer)) {
+    return buffer
+  }
+
+  if (buffer.type === 'Buffer' && Array.isArray(buffer.data)) {
+    return Buffer.from(buffer.data)
+  }
+
+  throw new Error('Invalid buffer payload')
+}
+
+function toFileType(value: string): FileType {
+  const normalized = value.toUpperCase()
+  if (
+    normalized === 'PDF' ||
+    normalized === 'DOCX' ||
+    normalized === 'TXT' ||
+    normalized === 'JPG' ||
+    normalized === 'JPEG' ||
+    normalized === 'PNG'
+  ) {
+    return normalized
+  }
+  throw new Error(`Unsupported knowledge file type: ${value}`)
+}
+
+function toMetadataRecord(value: unknown): Record<string, unknown> {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return {}
 }
 
 
@@ -70,7 +107,7 @@ export const indexKnowledge = inngest.createFunction(
         throw new Error(`File not found: ${fileId}`)
       }
 
-      const file = data as unknown as KnowledgeFile
+      const file = data as KnowledgeFile
 
       // Verify user ownership
       if (file.user_id !== userId) {
@@ -80,12 +117,12 @@ export const indexKnowledge = inngest.createFunction(
       return { file }
     })
 
-    const file = fileInfo.file as KnowledgeFile
+    const file = fileInfo.file
 
     // Step 3: Update file status to indexing
     await step.run('update-file-status', async () => {
-      await (supabaseAdmin
-        .from('knowledge_files') as any)
+      await supabaseAdmin
+        .from('knowledge_files')
         .update({ status: 'indexing' })
         .eq('id', fileId)
     })
@@ -96,16 +133,14 @@ export const indexKnowledge = inngest.createFunction(
       return await downloadFile('KNOWLEDGE', file.storage_path)
     })
 
-    const buffer = Buffer.isBuffer(downloadResult.buffer)
-      ? downloadResult.buffer
-      : Buffer.from(downloadResult.buffer as any)
+    const buffer = normalizeBuffer(downloadResult.buffer)
 
     // Step 5: Extract text from file
     const extractionResult = await step.run('extract-text', async () => {
       await jobRepository.updateStatus(jobId, 'running', 20)
       await jobRepository.logInfo(jobId, `提取文本 (${file.file_type})...`)
 
-      const extracted = await extractText(buffer, file.file_type as any)
+      const extracted = await extractText(buffer, toFileType(file.file_type))
       const cleaned = cleanExtractedText(extracted.text)
 
       if (cleaned.length < 10) {
@@ -200,7 +235,7 @@ export const indexKnowledge = inngest.createFunction(
         const batch = chunkRecords.slice(i, i + batchSize)
         const { error } = await supabaseAdmin
           .from('knowledge_chunks')
-          .insert(batch as any)
+          .insert(batch)
 
         if (error) {
           throw new Error(`Failed to store chunks (batch ${Math.floor(i / batchSize)}): ${error.message}`)
@@ -217,14 +252,14 @@ export const indexKnowledge = inngest.createFunction(
     await step.run('finalize', async () => {
       await jobRepository.logInfo(jobId, `索引完成: ${chunks.length} 个块`)
 
-      await (supabaseAdmin
-        .from('knowledge_files') as any)
+      await supabaseAdmin
+        .from('knowledge_files')
         .update({
           status: 'ready',
           chunk_count: chunks.length,
           last_indexed_at: new Date().toISOString(),
           metadata: {
-            ...(file.metadata || {}),
+            ...toMetadataRecord(file.metadata),
             extractedCharCount: cleanedText.length,
             embeddingProvider: EMBEDDING_PROVIDER_TYPE,
             embeddingDimension: embeddings[0]?.dimension,
@@ -272,7 +307,7 @@ export const deleteKnowledge = inngest.createFunction(
         throw new Error(`File not found: ${fileId}`)
       }
 
-      const file = data as unknown as KnowledgeFile
+      const file = data as KnowledgeFile
 
       if (file.user_id !== userId) {
         throw new Error(`Access denied: User does not own this file`)
@@ -281,7 +316,7 @@ export const deleteKnowledge = inngest.createFunction(
       return { file }
     })
 
-    const file = fileInfo.file as KnowledgeFile
+    const file = fileInfo.file
 
     // Step 2: Delete file from storage
     await step.run('delete-from-storage', async () => {

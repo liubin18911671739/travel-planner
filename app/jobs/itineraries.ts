@@ -1,18 +1,56 @@
 import { inngest } from '@/lib/queue/client'
 import { jobRepository } from '@/lib/jobs/repository'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { GammaClient } from '@/lib/gamma/client'
+import { GammaClient, type GammaSlideContent } from '@/lib/gamma/client'
 import { createRAGRetrieval } from '@/lib/rag/retrieval'
-import { createEmbeddingsProvider } from '@/lib/embeddings/stub'
+import {
+  createEmbeddingsProvider,
+  type EmbeddingProviderType,
+} from '@/lib/embeddings/stub'
 import { uploadFile } from '@/lib/storage/helper'
-import { BUCKETS } from '@/lib/storage/buckets'
 import { createLLMProviderFromEnv } from '@/lib/llm'
+import type { Json } from '@/lib/db/types'
 import {
   buildItineraryPrompt,
   extractJSONFromResponse,
   isValidItineraryContent,
+  type ItineraryContent,
   type ItineraryPromptInput,
 } from '@/lib/llm/prompts'
+
+const EMBEDDING_PROVIDER_TYPE = (
+  process.env.EMBEDDING_PROVIDER || 'stub'
+) as EmbeddingProviderType
+
+function normalizeItinerarySettings(
+  value: unknown
+): ItineraryPromptInput['settings'] | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined
+  }
+
+  const settings = value as Record<string, unknown>
+  const themes = Array.isArray(settings.themes)
+    ? settings.themes.filter((item): item is string => typeof item === 'string')
+    : undefined
+  const difficulty =
+    typeof settings.difficulty === 'string' ? settings.difficulty : undefined
+  const budget = typeof settings.budget === 'string' ? settings.budget : undefined
+
+  if (!themes && !difficulty && !budget) {
+    return undefined
+  }
+
+  return {
+    themes,
+    difficulty,
+    budget,
+  }
+}
+
+function toJson(value: unknown): Json {
+  return JSON.parse(JSON.stringify(value)) as Json
+}
 
 /**
  * LLM call for itinerary generation using Zhipu AI (智谱清言).
@@ -23,8 +61,8 @@ async function generateItineraryContent(
   destination: string,
   durationDays: number,
   knowledgeContext: string,
-  settings?: Record<string, any>
-): Promise<any> {
+  settings?: ItineraryPromptInput['settings']
+): Promise<ItineraryContent> {
   // Create LLM provider using environment configuration
   const llm = createLLMProviderFromEnv()
 
@@ -45,7 +83,7 @@ async function generateItineraryContent(
   })
 
   // Extract and parse JSON response
-  let parsedContent: any
+  let parsedContent: unknown
 
   try {
     // Extract JSON from response (handles markdown code blocks)
@@ -71,27 +109,23 @@ async function generateItineraryContent(
 /**
  * Convert itinerary content to Gamma slides format.
  */
-function convertItineraryToSlides(content: any): any[] {
-  const slides: any[] = []
+function convertItineraryToSlides(content: ItineraryContent): GammaSlideContent[] {
+  const slides: GammaSlideContent[] = []
 
   // Title slide
   slides.push({
-    type: 'title',
     title: content.destination || '研学行程',
-    subtitle: `${content.durationDays}日深度研学体验`,
+    content: `${content.durationDays}日深度研学体验`,
   })
 
   // Day slides
-  content.days?.forEach((day: any) => {
+  content.days?.forEach((day) => {
     slides.push({
-      type: 'section',
       title: day.title,
-    })
-
-    slides.push({
-      type: 'content',
-      title: day.description,
-      bullets: day.activities?.map((a: any) => `${a.time}: ${a.activity} (${a.location})`) || [],
+      content: day.description,
+      bullets: day.activities?.map(
+        (activity) => `${activity.time}: ${activity.activity} (${activity.location})`
+      ) || [],
     })
   })
 
@@ -133,7 +167,9 @@ export const generateItinerary = inngest.createFunction(
         return { knowledgeContext: '' }
       }
 
-      const embeddingsProvider = createEmbeddingsProvider('stub')
+      const embeddingsProvider = createEmbeddingsProvider(
+        EMBEDDING_PROVIDER_TYPE
+      )
       const rag = createRAGRetrieval(embeddingsProvider)
       const context = await rag.retrieveAsContext(destination, knowledgePackIds, {
         k: 10,
@@ -152,13 +188,14 @@ export const generateItinerary = inngest.createFunction(
         destination,
         durationDays,
         knowledgeContext,
-        settings
+        normalizeItinerarySettings(settings)
       )
 
       // Store content in database
-      await (supabaseAdmin
-        .from('itineraries') as any)
-        .update({ content })
+      const contentJson = toJson(content)
+      await supabaseAdmin
+        .from('itineraries')
+        .update({ content: contentJson })
         .eq('id', itineraryId)
 
       return { itineraryContent: content }
@@ -185,8 +222,8 @@ export const generateItinerary = inngest.createFunction(
       })
 
       // Update itinerary with Gamma info
-      await (supabaseAdmin
-        .from('itineraries') as any)
+      await supabaseAdmin
+        .from('itineraries')
         .update({
           gamma_deck_id: deck.deckId,
           gamma_deck_url: deck.deckUrl,
@@ -241,8 +278,8 @@ export const generateItinerary = inngest.createFunction(
       ]
 
       // Upsert artifacts (handles retries safely)
-      await (supabaseAdmin
-        .from('artifacts') as any)
+      await supabaseAdmin
+        .from('artifacts')
         .upsert(artifactRecords, { onConflict: 'itinerary_id,kind' })
 
       return { artifacts: artifactRecords }
@@ -250,8 +287,8 @@ export const generateItinerary = inngest.createFunction(
 
     // Step 6: Finalize
     await step.run('finalize', async () => {
-      await (supabaseAdmin
-        .from('itineraries') as any)
+      await supabaseAdmin
+        .from('itineraries')
         .update({ status: 'ready' })
         .eq('id', itineraryId)
 

@@ -15,21 +15,25 @@ ALTER TABLE public.knowledge_packs ENABLE ROW LEVEL SECURITY;
 -- ============================================================================
 
 -- Users can read their own knowledge files
+DROP POLICY IF EXISTS "Users can view own knowledge files" ON public.knowledge_files;
 CREATE POLICY "Users can view own knowledge files"
 ON public.knowledge_files FOR SELECT
 USING (auth.uid() = user_id);
 
 -- Users can insert their own knowledge files
+DROP POLICY IF EXISTS "Users can insert own knowledge files" ON public.knowledge_files;
 CREATE POLICY "Users can insert own knowledge files"
 ON public.knowledge_files FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
 -- Users can update their own knowledge files
+DROP POLICY IF EXISTS "Users can update own knowledge files" ON public.knowledge_files;
 CREATE POLICY "Users can update own knowledge files"
 ON public.knowledge_files FOR UPDATE
 USING (auth.uid() = user_id);
 
 -- Users can delete their own knowledge files
+DROP POLICY IF EXISTS "Users can delete own knowledge files" ON public.knowledge_files;
 CREATE POLICY "Users can delete own knowledge files"
 ON public.knowledge_files FOR DELETE
 USING (auth.uid() = user_id);
@@ -39,6 +43,7 @@ USING (auth.uid() = user_id);
 -- ============================================================================
 
 -- Users can read chunks from their own files (via file relationship)
+DROP POLICY IF EXISTS "Users can view own knowledge chunks" ON public.knowledge_chunks;
 CREATE POLICY "Users can view own knowledge chunks"
 ON public.knowledge_chunks FOR SELECT
 USING (
@@ -50,16 +55,19 @@ USING (
 );
 
 -- Service role can insert chunks (for Inngest functions)
+DROP POLICY IF EXISTS "Service role can insert knowledge chunks" ON public.knowledge_chunks;
 CREATE POLICY "Service role can insert knowledge chunks"
 ON public.knowledge_chunks FOR INSERT
 WITH CHECK (true);
 
 -- Service role can update chunks
+DROP POLICY IF EXISTS "Service role can update knowledge chunks" ON public.knowledge_chunks;
 CREATE POLICY "Service role can update knowledge chunks"
 ON public.knowledge_chunks FOR UPDATE
 USING (true);
 
 -- Users can delete chunks from their own files
+DROP POLICY IF EXISTS "Users can delete own knowledge chunks" ON public.knowledge_chunks;
 CREATE POLICY "Users can delete own knowledge chunks"
 ON public.knowledge_chunks FOR DELETE
 USING (
@@ -75,21 +83,25 @@ USING (
 -- ============================================================================
 
 -- Users can read their own knowledge packs
+DROP POLICY IF EXISTS "Users can view own knowledge packs" ON public.knowledge_packs;
 CREATE POLICY "Users can view own knowledge packs"
 ON public.knowledge_packs FOR SELECT
 USING (auth.uid() = user_id);
 
 -- Users can insert their own knowledge packs
+DROP POLICY IF EXISTS "Users can insert own knowledge packs" ON public.knowledge_packs;
 CREATE POLICY "Users can insert own knowledge packs"
 ON public.knowledge_packs FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
 -- Users can update their own knowledge packs
+DROP POLICY IF EXISTS "Users can update own knowledge packs" ON public.knowledge_packs;
 CREATE POLICY "Users can update own knowledge packs"
 ON public.knowledge_packs FOR UPDATE
 USING (auth.uid() = user_id);
 
 -- Users can delete their own knowledge packs
+DROP POLICY IF EXISTS "Users can delete own knowledge packs" ON public.knowledge_packs;
 CREATE POLICY "Users can delete own knowledge packs"
 ON public.knowledge_packs FOR DELETE
 USING (auth.uid() = user_id);
@@ -277,9 +289,6 @@ GRANT EXECUTE ON FUNCTION get_pack_file_ids TO authenticated;
 -- Indexes for performance
 -- ============================================================================
 
--- Create index on knowledge_chunks for user-scoped queries
+-- Create index for chunk lookup in user-scoped queries
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_file_user
-ON public.knowledge_chunks(file_id)
-WHERE file_id IN (
-  SELECT id FROM public.knowledge_files WHERE user_id = auth.uid()
-);
+ON public.knowledge_chunks(file_id, created_at DESC);

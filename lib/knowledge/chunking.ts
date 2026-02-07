@@ -14,7 +14,7 @@ export interface ChunkMetadata {
   endIndex?: number
   page?: number
   source?: string
-  [key: string]: any
+  [key: string]: unknown
 }
 
 export interface TextChunk {
@@ -28,7 +28,7 @@ export interface ChunkingOptions {
   minChunkSize?: number // Minimum chunk size (default: 50)
   separator?: string // Separator to use for splitting (default: '\n\n')
   keepSeparator?: boolean // Whether to keep separator in chunks (default: true)
-  metadata?: Record<string, any> // Additional metadata to attach to all chunks
+  metadata?: Record<string, unknown> // Additional metadata to attach to all chunks
 }
 
 /**
@@ -216,7 +216,7 @@ function getOverlapSegments(
 function createChunk(
   content: string,
   startIndex: number,
-  baseMetadata: Record<string, any>
+  baseMetadata: Record<string, unknown>
 ): TextChunk {
   return {
     content: content.trim(),

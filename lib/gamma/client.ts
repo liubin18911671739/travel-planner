@@ -55,6 +55,15 @@ export interface DeckStatus {
   ready: boolean
 }
 
+type GammaApiBlock = {
+  type: 'heading' | 'paragraph' | 'bullet'
+  content: string
+}
+
+type GammaApiSlide = {
+  blocks: GammaApiBlock[]
+}
+
 /**
  * Custom error for Gamma operations.
  */
@@ -242,9 +251,9 @@ export class GammaClient {
    * Convert itinerary content to Gamma slide format.
    * This is a placeholder - implement based on your content structure.
    */
-  private convertContentToSlides(content: GammaSlideContent[]): any[] {
-    return content.map((slide) => ({
-      blocks: [
+  private convertContentToSlides(content: GammaSlideContent[]): GammaApiSlide[] {
+    return content.map((slide) => {
+      const blocks: GammaApiBlock[] = [
         {
           type: 'heading',
           content: slide.title || '',
@@ -253,12 +262,16 @@ export class GammaClient {
           type: 'paragraph',
           content: slide.content,
         },
-        ...(slide.bullets || []).map((bullet) => ({
-          type: 'bullet',
-          content: bullet,
-        })),
-      ],
-    }))
+        ...(slide.bullets || []).map(
+          (bullet): GammaApiBlock => ({
+            type: 'bullet',
+            content: bullet,
+          })
+        ),
+      ]
+
+      return { blocks }
+    })
   }
 
   /**

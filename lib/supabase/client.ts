@@ -2,11 +2,12 @@
 
 import { createBrowserClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from './database.types'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-let client: SupabaseClient | null = null
+let client: SupabaseClient<Database> | null = null
 
 /**
  * Create a Supabase browser client for use in Client Components.
@@ -22,7 +23,7 @@ export function createClient() {
     if (!supabaseAnonKey) {
       throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable is not set')
     }
-    client = createBrowserClient(supabaseUrl, supabaseAnonKey)
+    client = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey)
   }
   return client
 }

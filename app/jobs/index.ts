@@ -2,6 +2,8 @@ import { inngest } from '@/lib/queue/client'
 import { serve } from 'inngest/next'
 import type { NextRequest } from 'next/server'
 
+type RouteContext = { params?: Promise<Record<string, string>> }
+
 /**
  * Inngest serve function for Next.js App Router.
  * Export this from app/api/inngest/route.ts for Inngest dev server.
@@ -29,10 +31,10 @@ function getHandler() {
   return inngestHandler
 }
 
-export async function GET(req: NextRequest, context: any) {
+export async function GET(req: NextRequest, context: RouteContext) {
   return getHandler().GET(req, context)
 }
 
-export async function POST(req: NextRequest, context: any) {
+export async function POST(req: NextRequest, context: RouteContext) {
   return getHandler().POST(req, context)
 }

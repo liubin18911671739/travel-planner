@@ -3,7 +3,6 @@ import { createServerClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import {
   KnowledgePackUpdateRequestSchema,
-  type KnowledgePackResponse,
   type ErrorResponse,
 } from '@/lib/knowledge/schemas'
 
@@ -21,7 +20,7 @@ type KnowledgePackRecord = Record<string, unknown> & {
  * Get a specific knowledge pack by ID.
  */
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   context: RouteContext
 ) {
   try {
@@ -54,11 +53,11 @@ export async function GET(
     }
 
     const packData = pack as KnowledgePackRecord
-    const response: KnowledgePackResponse = {
+    const response = {
       pack: {
         ...packData,
         fileCount: packData.file_ids?.length || 0,
-      } as any,
+      },
     }
     return NextResponse.json(response)
   } catch (error) {
@@ -160,7 +159,9 @@ export async function PATCH(
         )
       }
 
-      const validFileIds = (files || []).map((f: any) => f.id)
+      const validFileIds = ((files as Array<{ id: unknown }> | null) || [])
+        .map((f) => f.id)
+        .filter((id): id is string => typeof id === 'string')
 
       if (validFileIds.length !== validationResult.data.fileIds.length) {
         return NextResponse.json(
@@ -175,8 +176,8 @@ export async function PATCH(
     }
 
     // Update the pack
-    const { data: pack, error: updateError } = await (supabaseAdmin
-      .from('knowledge_packs') as any)
+    const { data: pack, error: updateError } = await supabaseAdmin
+      .from('knowledge_packs')
       .update(updates)
       .eq('id', packId)
       .select('*, file_ids')
@@ -190,11 +191,11 @@ export async function PATCH(
     }
 
     const packData = pack as KnowledgePackRecord
-    const response: KnowledgePackResponse = {
+    const response = {
       pack: {
         ...packData,
         fileCount: packData.file_ids?.length || 0,
-      } as any,
+      },
     }
     return NextResponse.json(response)
   } catch (error) {
@@ -215,7 +216,7 @@ export async function PATCH(
  * Delete a knowledge pack.
  */
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   context: RouteContext
 ) {
   try {

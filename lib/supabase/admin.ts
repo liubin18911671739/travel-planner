@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from './database.types'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -10,7 +12,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
  * Note: This will throw at runtime if env vars are not set.
  * During build time, we use a lazy initialization pattern.
  */
-let adminClient: ReturnType<typeof createClient> | null = null
+let adminClient: SupabaseClient<Database> | null = null
 
 export function getSupabaseAdmin() {
   if (!adminClient) {
@@ -21,7 +23,7 @@ export function getSupabaseAdmin() {
       throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is not set')
     }
 
-    adminClient = createClient(supabaseUrl, supabaseServiceKey, {
+    adminClient = createClient<Database>(supabaseUrl, supabaseServiceKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
@@ -36,7 +38,7 @@ export function getSupabaseAdmin() {
  * Direct access to the admin client (convenience).
  * Use getSupabaseAdmin() for lazy initialization.
  */
-export const supabaseAdmin = new Proxy({} as ReturnType<typeof createClient>, {
+export const supabaseAdmin = new Proxy({} as SupabaseClient<Database>, {
   get(_target, prop) {
     const client = getSupabaseAdmin()
     return Reflect.get(client, prop)

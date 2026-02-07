@@ -43,6 +43,7 @@ export {
 import { StubLLMProvider } from './stub'
 import { ZhipuProvider } from './zhipu'
 import type { LLMProvider, LLMProviderType } from './provider'
+import type { ZhipuConfig } from './zhipu'
 
 /**
  * Factory function to create an LLM provider.
@@ -66,7 +67,7 @@ export function createLLMProvider(
 ): LLMProvider {
   switch (type) {
     case 'zhipu':
-      return new ZhipuProvider(config as any)
+      return new ZhipuProvider((config || {}) as ZhipuConfig)
     case 'stub':
       return new StubLLMProvider()
     default:

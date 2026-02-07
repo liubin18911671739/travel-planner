@@ -3,23 +3,28 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getSignedUrl } from '@/lib/storage/helper'
 import { EXPORT_SIGNED_URL_EXPIRES_IN } from '@/lib/storage/buckets'
 
+type RouteContext = {
+  params: Promise<{ id: string }>
+}
+
+type ArtifactRow = {
+  id: string
+  kind: string
+  storage_bucket: string | null
+  storage_path: string
+}
+
 /**
+ * @deprecated Prefer /api/exports and /api/exports/artifacts/[id]/download
+ *
  * GET /api/exports/:id
- *
- * Get a signed URL for downloading an exported file.
- *
- * Response:
- * {
- *   url: string (signed URL)
- *   expiresAt: string (ISO timestamp)
- * }
+ * Compatibility endpoint: treat :id as itineraryId and return one export URL.
  */
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  _request: NextRequest,
+  context: RouteContext
 ) {
   try {
-    // Get user from session
     const supabase = await createServerClient()
     const {
       data: { user },
@@ -29,21 +34,71 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const itineraryId = params.id
+    const { id: itineraryId } = await context.params
 
-    // Get itinerary (ensure user owns it)
-    const { data: itinerary, error } = await supabase
+    const { data: itinerary, error: itineraryError } = await supabase
       .from('itineraries')
-      .select('export_url, status')
+      .select('id, export_url, status')
       .eq('id', itineraryId)
       .eq('user_id', user.id)
       .single()
 
-    if (error || !itinerary) {
+    if (itineraryError || !itinerary) {
       return NextResponse.json({ error: 'Itinerary not found' }, { status: 404 })
     }
 
-    if (!itinerary.export_url) {
+    const { data: artifacts } = await supabase
+      .from('artifacts')
+      .select('id, kind, storage_bucket, storage_path')
+      .eq('itinerary_id', itineraryId)
+      .order('created_at', { ascending: false })
+
+    const artifactRows = (artifacts || []) as ArtifactRow[]
+    const preferredArtifact =
+      artifactRows.find((row) => row.kind === 'pdf') || artifactRows[0]
+
+    if (preferredArtifact) {
+      if (!preferredArtifact.storage_bucket) {
+        return NextResponse.json(
+          { error: 'Missing storage bucket' },
+          { status: 400 }
+        )
+      }
+
+      const normalizedBucket = preferredArtifact.storage_bucket.toUpperCase()
+      if (
+        normalizedBucket !== 'EXPORTS' &&
+        normalizedBucket !== 'MERCH' &&
+        normalizedBucket !== 'KNOWLEDGE'
+      ) {
+        return NextResponse.json(
+          { error: 'Unsupported storage bucket' },
+          { status: 400 }
+        )
+      }
+
+      const url = await getSignedUrl(
+        normalizedBucket as 'EXPORTS' | 'MERCH' | 'KNOWLEDGE',
+        preferredArtifact.storage_path,
+        EXPORT_SIGNED_URL_EXPIRES_IN
+      )
+
+      return NextResponse.json({
+        deprecated: true,
+        itineraryId,
+        artifactId: preferredArtifact.id,
+        kind: preferredArtifact.kind,
+        url,
+        expiresAt: new Date(
+          Date.now() + EXPORT_SIGNED_URL_EXPIRES_IN * 1000
+        ).toISOString(),
+      })
+    }
+
+    const legacyExportUrl =
+      typeof itinerary.export_url === 'string' ? itinerary.export_url : null
+
+    if (!legacyExportUrl) {
       return NextResponse.json(
         { error: 'No export available for this itinerary' },
         { status: 404 }
@@ -57,20 +112,20 @@ export async function GET(
       )
     }
 
-    // Generate signed URL
-    const storagePath = itinerary.export_url.replace('exports/', '')
+    const legacyPath = legacyExportUrl.replace('exports/', '')
     const signedUrl = await getSignedUrl(
       'EXPORTS',
-      storagePath,
+      legacyPath,
       EXPORT_SIGNED_URL_EXPIRES_IN
     )
 
-    // Calculate expiration time
-    const expiresAt = new Date(Date.now() + EXPORT_SIGNED_URL_EXPIRES_IN * 1000).toISOString()
-
     return NextResponse.json({
+      deprecated: true,
+      itineraryId,
       url: signedUrl,
-      expiresAt,
+      expiresAt: new Date(
+        Date.now() + EXPORT_SIGNED_URL_EXPIRES_IN * 1000
+      ).toISOString(),
     })
   } catch (error) {
     console.error('Export get error:', error)

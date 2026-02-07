@@ -37,7 +37,7 @@ export type KnowledgeFileStatus = z.infer<typeof KnowledgeFileStatusSchema>
 
 export const KnowledgeUploadRequestSchema = z.object({
   file: z.instanceof(File).refine(
-    (file) => Object.values(SUPPORTED_FILE_TYPES).includes(file.type as any),
+    (file) => Object.values(SUPPORTED_FILE_TYPES).includes(file.type as (typeof SUPPORTED_FILE_TYPES)[SupportedFileType]),
     `Unsupported file type. Supported: PDF, DOCX, TXT, JPG, PNG`
   ).refine(
     (file) => file.size <= 10 * 1024 * 1024,
@@ -240,7 +240,9 @@ export type ErrorResponse = z.infer<typeof ErrorResponseSchema>
 // ============================================================================
 
 export function validateFileType(mimeType: string): boolean {
-  return Object.values(SUPPORTED_FILE_TYPES).includes(mimeType as any)
+  return Object.values(SUPPORTED_FILE_TYPES).includes(
+    mimeType as (typeof SUPPORTED_FILE_TYPES)[SupportedFileType]
+  )
 }
 
 export function getFileExtension(filename: string): string {

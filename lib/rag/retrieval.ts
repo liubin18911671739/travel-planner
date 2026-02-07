@@ -8,7 +8,15 @@ export interface RetrievedChunk {
   id: string
   fileId: string
   content: string
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
+  similarity: number
+}
+
+type MatchRow = {
+  id: string
+  file_id: string
+  content: string
+  metadata: Record<string, unknown> | null
   similarity: number
 }
 
@@ -56,7 +64,7 @@ export class RAGRetrieval {
         .select('file_ids')
         .in('id', knowledgePackIds)
 
-      fileIds = (packs as any)?.flatMap((p: any) => p.file_ids) || []
+      fileIds = (packs || []).flatMap((p) => p.file_ids || [])
 
       if (fileIds && fileIds.length === 0) {
         return []
@@ -69,14 +77,14 @@ export class RAGRetrieval {
       match_threshold: threshold,
       match_count: k,
       file_ids: fileIds,
-    } as any)
+    })
 
     if (error) {
       throw new Error(`RAG retrieval failed: ${error.message}`)
     }
 
-    const results: any[] = data || []
-    return results.map((row: any) => ({
+    const results = (data || []) as MatchRow[]
+    return results.map((row) => ({
       id: row.id,
       fileId: row.file_id,
       content: row.content,
@@ -106,14 +114,14 @@ export class RAGRetrieval {
       query_embedding: vector,
       file_id: fileId,
       match_count: k,
-    } as any)
+    })
 
     if (error) {
       throw new Error(`File retrieval failed: ${error.message}`)
     }
 
-    const results: any[] = data || []
-    return results.map((row: any) => ({
+    const results = (data || []) as MatchRow[]
+    return results.map((row) => ({
       id: row.id,
       fileId: row.file_id,
       content: row.content,

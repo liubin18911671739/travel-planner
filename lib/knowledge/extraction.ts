@@ -15,8 +15,24 @@ export interface ExtractedText {
     fileType: string
     pageCount?: number
     charCount: number
-    [key: string]: any
+    [key: string]: unknown
   }
+}
+
+type OCRLoggerMessage = {
+  status?: string
+  progress?: number
+}
+
+function isOCRLoggerMessage(value: unknown): value is OCRLoggerMessage {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const record = value as Record<string, unknown>
+  return (
+    (typeof record.status === 'string' || record.status === undefined) &&
+    (typeof record.progress === 'number' || record.progress === undefined)
+  )
 }
 
 export type FileType = 'PDF' | 'DOCX' | 'TXT' | 'JPG' | 'JPEG' | 'PNG'
@@ -205,10 +221,10 @@ async function extractTextFromImage(
       buffer,
       'chi_sim+eng',
       {
-        logger: (m: any) => {
+        logger: (m: unknown) => {
           // Log OCR progress for debugging
-          if (m.status === 'recognizing text') {
-            const progress = Math.round(m.progress * 100)
+          if (isOCRLoggerMessage(m) && m.status === 'recognizing text') {
+            const progress = Math.round((m.progress || 0) * 100)
             console.log(`[OCR] Progress: ${progress}%`)
           }
         },

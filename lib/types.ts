@@ -56,7 +56,7 @@ export interface RetrievedChunk {
   fileId: string
   fileName?: string
   content: string
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   similarity: number
 }
 
@@ -155,4 +155,49 @@ export interface TabItem {
   value: string
   icon: React.ReactNode
   href: string
+}
+
+/**
+ * API DTOs (P0/P1 refactor)
+ */
+export interface SettingsDTO {
+  brandName: string
+  brandColor: string
+  notifications: boolean
+  autoSave: boolean
+}
+
+export interface ArtifactListItemDTO {
+  artifactId: string
+  kind: string
+  ownerType: 'itinerary' | 'merch'
+  ownerId: string
+  ownerName: string
+  bucket: string
+  storagePath: string
+  fileSize: number
+  createdAt: string
+}
+
+export interface MerchDetailDTO {
+  id: string
+  name: string
+  productType: string
+  status: string
+  pattern: { storagePath: string; url: string } | null
+  mockups: Array<{ storagePath: string; url: string }>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ReindexResponseDTO {
+  fileId: string
+  jobId: string
+  status: 'pending'
+}
+
+export interface ApiErrorDTO {
+  error: string
+  message?: string
+  code?: string
 }

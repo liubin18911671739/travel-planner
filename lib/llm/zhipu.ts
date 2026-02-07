@@ -43,11 +43,58 @@ const MODEL_CONFIGS: Record<ZhipuModel, { maxTokens: number; description: string
 const DEFAULT_MAX_RETRIES = 3
 const DEFAULT_RETRY_DELAY_MS = 1000
 
+type ZhipuUsage = {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
+type ZhipuChoice = {
+  message?: {
+    content?: string
+  }
+  delta?: {
+    content?: string
+  }
+}
+
+type ZhipuChatResponse = {
+  choices: ZhipuChoice[]
+  model: string
+  usage?: ZhipuUsage
+}
+
+type ZhipuStreamChunk = {
+  choices: ZhipuChoice[]
+}
+
+type ChatPayload = {
+  model: string
+  temperature: number
+  top_p: number
+  max_tokens?: number
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isZhipuChatResponse(value: unknown): value is ZhipuChatResponse {
+  if (!isRecord(value) || !Array.isArray(value.choices)) {
+    return false
+  }
+  return typeof value.model === 'string'
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return isRecord(value) && Symbol.asyncIterator in value
+}
+
 /**
  * Zhipu AI LLM Provider implementation.
  */
 export class ZhipuProvider implements LLMProvider {
-  private client: any
+  private client: ZhipuAI | null
   private readonly model: ZhipuModel
   private readonly maxRetries: number
   private initialized = false
@@ -98,7 +145,7 @@ export class ZhipuProvider implements LLMProvider {
     })
 
     return {
-      content: response.choices[0].message.content || '',
+      content: response.choices[0]?.message?.content || '',
       model: response.model,
       usage: response.usage
         ? {
@@ -127,7 +174,11 @@ export class ZhipuProvider implements LLMProvider {
     const temperature = options?.temperature ?? 0.7
     const topP = options?.top_p ?? 0.9
 
-    const stream = await this.client.chat.completions.create({
+    if (!this.client) {
+      throw new Error('Zhipu client is not initialized')
+    }
+
+    const streamResult = await this.client.chat.completions.create({
       model,
       messages: messages.map((m) => ({
         role: m.role,
@@ -138,8 +189,12 @@ export class ZhipuProvider implements LLMProvider {
       stream: true,
     })
 
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content
+    if (!isAsyncIterable(streamResult)) {
+      throw new Error('Zhipu stream response is invalid')
+    }
+
+    for await (const chunk of streamResult as AsyncIterable<ZhipuStreamChunk>) {
+      const content = chunk.choices?.[0]?.delta?.content
       if (content) {
         yield content
       }
@@ -151,17 +206,27 @@ export class ZhipuProvider implements LLMProvider {
    */
   private async chatWithRetry(
     messages: ChatMessage[],
-    payload: Record<string, any>,
+    payload: ChatPayload,
     attempt: number = 1
-  ): Promise<any> {
+  ): Promise<ZhipuChatResponse> {
     try {
-      return await this.client.chat.completions.create({
+      if (!this.client) {
+        throw new Error('Zhipu client is not initialized')
+      }
+
+      const response = await this.client.chat.completions.create({
         ...payload,
         messages: messages.map((m) => ({
           role: m.role,
           content: m.content,
         })),
       })
+
+      if (!isZhipuChatResponse(response)) {
+        throw new Error('Zhipu response payload is invalid')
+      }
+
+      return response
     } catch (error) {
       const isLastAttempt = attempt >= this.maxRetries
 

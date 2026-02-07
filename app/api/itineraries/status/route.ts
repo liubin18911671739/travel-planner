@@ -52,7 +52,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Build response
-    const response: any = {
+    const response: {
+      jobId: string
+      status: 'pending' | 'running' | 'done' | 'failed'
+      progress: number
+      logs: Array<{ level: 'info' | 'warning' | 'error'; message: string; timestamp: string }>
+      result?: Record<string, unknown>
+      error?: string | null
+    } = {
       jobId: job.id,
       status: job.status,
       progress: job.progress,

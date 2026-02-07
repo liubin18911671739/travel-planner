@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
 
     // Create itinerary record
     const itineraryId = randomUUID()
-    const { data: itinerary, error: itineraryError } = await supabaseAdmin
+    const { error: itineraryError } = await supabaseAdmin
       .from('itineraries')
       .insert({
         id: itineraryId,
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
         knowledge_pack_ids: knowledgePackIds,
         settings,
         status: 'generating',
-      } as any)
+      })
       .select('id')
       .single()
 
@@ -130,8 +130,8 @@ export async function POST(request: NextRequest) {
     })
 
     // Update itinerary with job reference
-    await (supabaseAdmin
-      .from('itineraries') as any)
+    await supabaseAdmin
+      .from('itineraries')
       .update({ job_id: jobId })
       .eq('id', itineraryId)
 

@@ -35,7 +35,7 @@ export interface ItineraryContext {
   destination: string
   highlights?: string[]
   themes?: string[]
-  settings?: Record<string, any>
+  settings?: Record<string, unknown>
 }
 
 /**
@@ -46,7 +46,7 @@ export interface ProductSpec {
   size?: string
   views: ViewType[]
   printArea: PrintArea
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -65,7 +65,7 @@ export interface MockupResult {
   viewType: ViewType
   imageBuffer: Buffer
   imageUrl: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -74,7 +74,7 @@ export interface MockupResult {
 export interface PatternResult {
   imageBuffer: Buffer
   imageUrl: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**

@@ -1,7 +1,5 @@
 'use client'
 
-import React from "react"
-
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -12,7 +10,7 @@ import {
   Settings,
   Menu,
 } from 'lucide-react'
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -52,13 +50,18 @@ const NAVIGATION_ITEMS: TabItem[] = [
 ]
 
 interface AppShellProps {
-  children: React.ReactNode
+  children: ReactNode
 }
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname()
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const isAuthRoute = pathname.startsWith('/auth')
+
+  if (isAuthRoute) {
+    return <main className="min-h-screen bg-background">{children}</main>
+  }
 
   const getCurrentTab = () => {
     if (pathname === '/') return 'itinerary'
@@ -132,19 +135,6 @@ export function AppShell({ children }: AppShellProps) {
           </div>
 
           <nav className="flex-1 px-3 py-4 space-y-1">
-            <Link href="/">
-              <Button
-                variant="ghost"
-                className={`w-full justify-start gap-3 h-11 rounded-xl font-medium transition-all ${
-                  currentTab === 'itinerary'
-                    ? 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90'
-                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
-                }`}
-              >
-                <MapPin className="w-5 h-5" />
-                <span>行程</span>
-              </Button>
-            </Link>
             {NAVIGATION_ITEMS.map((item) => (
               <Link key={item.value} href={item.href}>
                 <Button

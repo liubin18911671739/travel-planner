@@ -51,6 +51,17 @@ export async function checkQuota(
     .single()
 
   if (error || !user) {
+    // Fallback bootstrap for legacy users before trigger deployment
+    try {
+      const authUser = await supabaseAdmin.auth.admin.getUserById(userId)
+      if (authUser.data.user?.email) {
+        await createUserOnSignup(userId, authUser.data.user.email, 'free')
+        return checkQuota(userId, operation)
+      }
+    } catch (bootstrapError) {
+      console.error('Failed to bootstrap user quota row:', bootstrapError)
+    }
+
     return {
       allowed: false,
       reason: 'User not found',
@@ -60,18 +71,15 @@ export async function checkQuota(
     }
   }
 
-  // Cast to access properties
-  const userData = user as { plan_tier?: string; quota_used?: number; quota_limit?: number }
-
-  const limit = userData.quota_limit || PLAN_LIMITS[userData.plan_tier || ''] || PLAN_LIMITS.free
-  const used = userData.quota_used || 0
+  const limit = user.quota_limit || PLAN_LIMITS[user.plan_tier || ''] || PLAN_LIMITS.free
+  const used = user.quota_used || 0
   const remaining = Math.max(0, limit - used)
 
   // Check if quota is available
   if (remaining <= 0) {
     return {
       allowed: false,
-      reason: `Quota exceeded for ${userData.plan_tier} plan. Limit: ${limit}`,
+      reason: `Quota exceeded for ${user.plan_tier} plan. Limit: ${limit}`,
       remaining: 0,
       limit,
       used,
@@ -98,7 +106,7 @@ export async function incrementQuota(userId: string, operation?: string): Promis
   await supabaseAdmin.rpc('increment_user_quota', {
     user_id: userId,
     amount: cost,
-  } as any)
+  })
 }
 
 /**
@@ -111,7 +119,7 @@ export async function deductQuota(userId: string, amount: number = 1): Promise<v
   await supabaseAdmin.rpc('decrement_user_quota', {
     user_id: userId,
     amount,
-  } as any)
+  })
 }
 
 /**
@@ -142,14 +150,11 @@ export async function getQuotaStatus(userId: string): Promise<{
     }
   }
 
-  // Cast to access properties
-  const userData = user as { plan_tier?: string; quota_used?: number; quota_limit?: number }
-
-  const limit = userData.quota_limit || PLAN_LIMITS[userData.plan_tier || ''] || PLAN_LIMITS.free
-  const used = userData.quota_used || 0
+  const limit = user.quota_limit || PLAN_LIMITS[user.plan_tier || ''] || PLAN_LIMITS.free
+  const used = user.quota_used || 0
 
   return {
-    plan: userData.plan_tier || 'free',
+    plan: user.plan_tier || 'free',
     used,
     limit,
     remaining: Math.max(0, limit - used),
@@ -284,7 +289,7 @@ export async function createUserOnSignup(
       plan_tier: plan,
       quota_used: 0,
       quota_limit: PLAN_LIMITS[plan] || PLAN_LIMITS.free,
-    } as any)
+    })
 
   if (error) {
     // Ignore duplicate user errors

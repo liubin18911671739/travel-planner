@@ -1,5 +1,6 @@
 import { createServerClient as createSupabaseServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import type { Database } from './database.types'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY
@@ -20,22 +21,30 @@ export async function createServerClient() {
 
   const cookieStore = await cookies()
 
-  return createSupabaseServerClient(supabaseUrl, supabaseAnonKey, {
+  return createSupabaseServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value
       },
-      set(name: string, value: string, options: any) {
+      set(name: string, value: string, options: SupabaseCookieOptions) {
         try {
-          cookieStore.set({ name, value, ...options })
+          cookieStore.set({
+            name,
+            value,
+            ...(options as Record<string, unknown>),
+          })
         } catch {
           // In middleware, we can't set cookies
           // This is expected and handled by Supabase SSR
         }
       },
-      remove(name: string, options: any) {
+      remove(name: string, options: SupabaseCookieOptions) {
         try {
-          cookieStore.set({ name, value: '', ...options })
+          cookieStore.set({
+            name,
+            value: '',
+            ...(options as Record<string, unknown>),
+          })
         } catch {
           // In middleware, we can't set cookies
         }
@@ -60,4 +69,7 @@ export async function getCurrentUser() {
   }
 
   return user
+}
+type SupabaseCookieOptions = {
+  [key: string]: unknown
 }

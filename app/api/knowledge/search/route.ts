@@ -8,6 +8,16 @@ import {
   type ErrorResponse,
 } from '@/lib/knowledge/schemas'
 
+type PackRow = { file_ids: string[] }
+type SearchRow = {
+  id: string
+  file_id: string
+  content: string
+  metadata: Record<string, unknown> | null
+  similarity: number
+}
+type FileRow = { id: string; name: string }
+
 /**
  * POST /api/knowledge/search
  *
@@ -93,7 +103,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      targetFileIds = (packs || []).flatMap((p: any) => p.file_ids) || []
+      targetFileIds = ((packs || []) as PackRow[]).flatMap((p) => p.file_ids || [])
 
       if (targetFileIds.length === 0) {
         // No files in the specified packs
@@ -115,7 +125,7 @@ export async function POST(request: NextRequest) {
         match_threshold: threshold,
         match_count: topK,
         file_ids: targetFileIds,
-      } as any
+      }
     )
 
     if (searchError) {
@@ -127,7 +137,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Get file names for citations
-    const chunkIds = (searchResults || []).map((r: any) => r.file_id)
+    const typedResults = ((searchResults || []) as SearchRow[])
+    const chunkIds = typedResults.map((r) => r.file_id)
     const uniqueFileIds = [...new Set(chunkIds)]
 
     const { data: files } = await supabase
@@ -135,10 +146,12 @@ export async function POST(request: NextRequest) {
       .select('id, name')
       .in('id', uniqueFileIds)
 
-    const fileMap = new Map((files || []).map((f: any) => [f.id, f.name]))
+    const fileMap = new Map(
+      ((files || []) as FileRow[]).map((f) => [f.id, f.name])
+    )
 
     // Build response
-    const chunks: RetrievedChunk[] = (searchResults || []).map((row: any) => ({
+    const chunks: RetrievedChunk[] = typedResults.map((row) => ({
       id: row.id,
       fileId: row.file_id,
       fileName: fileMap.get(row.file_id),

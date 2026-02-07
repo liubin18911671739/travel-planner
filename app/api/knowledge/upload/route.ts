@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     // Create knowledge file record
     const fileId = randomUUID()
-    const { data: knowledgeFile, error: dbError } = await supabaseAdmin
+    const { error: dbError } = await supabaseAdmin
       .from('knowledge_files')
       .insert({
         id: fileId,
@@ -100,9 +100,9 @@ export async function POST(request: NextRequest) {
         file_size: file.size,
         storage_path: storagePath,
         status: 'pending',
-      } as any)
+      })
       .select('id')
-      .single() as any
+      .single()
 
     if (dbError) {
       // Clean up uploaded file

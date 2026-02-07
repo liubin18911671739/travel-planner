@@ -1,305 +1,172 @@
-# 研学行程生成器
+# 研学行程生成器（Travel Planner）
 
-> 基于 AI 的研学旅行规划平台 | AI-Powered Educational Travel Itinerary Generator
+AI 驱动的研学行程规划平台，覆盖知识库索引、行程生成、商品设计与导出交付。
 
-[![MVP Progress](https://img.shields.io/badge/MVP-Progress%3A%2090%25-brightgreen)](./TODO.md)
-[![Next.js](https://img.shields.io/badge/Next.js-16.1-black)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
+## 当前状态（2026-02-07）
 
-## 功能特性
+- 前端核心页面已接入真实 API：`/`, `/itinerary`, `/knowledge`, `/exports`, `/settings`, `/merch`
+- 认证闭环已落地：`/auth/login`、`/auth/register` + `middleware.ts` 全站鉴权
+- 导出下载统一走 `artifacts`：
+  - `GET /api/exports`
+  - `GET /api/exports/artifacts/[id]/download`
+- `GET /api/exports/[id]` 保留兼容，但已标记 deprecated
+- `next.config.mjs` 已移除 `typescript.ignoreBuildErrors`
 
-### 知识库管理
-- 上传多种格式文件：**PDF / DOCX / TXT / 图片**
-- 自动文本提取（含 **OCR** 图片识别）
-- 智能分块与向量嵌入
-- **RAG** 语义检索
-- 知识包管理（文件集合）
+详细进度与待办请看 [TODO.md](./TODO.md)。
 
-### 智能行程生成
-- 基于知识库内容生成个性化研学行程
-- **智谱清言 (GLM)** LLM 驱动
-- 支持 PDF / **PPTX** 双格式导出
-- 行程内容可定制（天数、主题、学习目标）
+## 认证行为
 
-### 商品设计工作室
-- 生成配套研学周边商品
-- 支持马克杯、手机壳、T 恤
-- **行程主题集成** - 根据目的地生成特色图案
-- **ComfyUI** 图像生成
-- 多视角效果图预览
-
-### 任务管理
-- **Inngest** 异步任务队列
-- 实时进度追踪 (0-100%)
-- 详细日志记录
-- 幂等性支持
+- 页面鉴权：
+  - 未登录访问业务页面重定向到 `/auth/login`
+  - 重定向附带 `next` 参数，登录成功后回跳原页面
+- API 鉴权：
+  - 未登录访问受保护 API 返回 `401` JSON
+- 放行路径：
+  - `/auth/*`
+  - `/api/webhooks/*`
+  - `/api/inngest`
+  - 静态资源与 `/_next/*`
 
 ## 技术栈
 
-### 前端
-- **Next.js 16** (App Router)
-- **React 19**
-- **TypeScript 5.7**
-- **Tailwind CSS**
-- **shadcn/ui** + Radix UI
-- **next-themes** (深色模式)
+- Next.js 16（App Router）
+- React 19 + TypeScript
+- Tailwind CSS + shadcn/ui
+- Supabase（PostgreSQL + pgvector + Storage + Auth）
+- Inngest（异步任务）
+- LLM: Zhipu / Stub
+- Embeddings: OpenAI / Stub
+- 图像生成: ComfyUI
+- 演示文稿: Gamma API
 
-### 后端
-- **Next.js API Routes** / Edge Functions
-- **Supabase**
-  - Authentication
-  - Database (PostgreSQL + pgvector)
-  - Storage
-  - Row Level Security (RLS)
-- **Inngest** 任务队列
+## API 一览
 
-### AI / ML
-| 组件 | 技术 |
-|------|------|
-| LLM | 智谱清言 (GLM-4) |
-| Embeddings | OpenAI / Stub |
-| 向量搜索 | pgvector |
-| 图像生成 | ComfyUI |
-| 演示文稿 | Gamma API |
-| OCR | tesseract.js |
+### Knowledge
 
-## 项目结构
+- `POST /api/knowledge/upload`
+- `GET /api/knowledge/list`
+- `GET /api/knowledge/[id]`
+- `DELETE /api/knowledge/[id]`
+- `POST /api/knowledge/[id]/reindex`
+- `POST /api/knowledge/search`
+- `GET /api/knowledge/packs`
+- `POST /api/knowledge/packs`
+- `GET /api/knowledge/packs/[id]`
+- `PATCH /api/knowledge/packs/[id]`
+- `DELETE /api/knowledge/packs/[id]`
 
-```
-travel-planner/
-├── app/                          # Next.js App Router
-│   ├── api/                      # API 路由
-│   │   ├── knowledge/            # 知识库 API
-│   │   ├── itineraries/          # 行程 API
-│   │   └── merch/                # 商品 API
-│   ├── jobs/                     # Inngest 任务函数
-│   │   ├── knowledge.ts          # 知识文件索引
-│   │   ├── itineraries.ts        # 行程生成
-│   │   └── merch.ts              # 商品设计
-│   ├── itinerary/page.tsx        # 行程管理页面
-│   ├── knowledge/page.tsx        # 知识库页面
-│   ├── merch/page.tsx            # 商品设计页面
-│   ├── exports/page.tsx          # 导出管理页面
-│   └── settings/page.tsx         # 设置页面
-├── components/
-│   ├── ui/                       # shadcn/ui 组件
-│   ├── app-shell.tsx             # 应用导航框架
-│   ├── job-status-card.tsx       # 任务进度组件
-│   └── ...
-├── lib/
-│   ├── embeddings/               # 向量嵌入提供者
-│   ├── knowledge/                # 知识库工具
-│   │   ├── extraction.ts         # 文本提取 (含 OCR)
-│   │   ├── chunking.ts           # 文本分块
-│   │   └── schemas.ts            # 数据校验
-│   ├── rag/                      # RAG 检索
-│   ├── llm/                      # LLM 提供者
-│   │   ├── provider.ts           # 统一接口
-│   │   ├── zhipu.ts              # 智谱清言
-│   │   └── prompts.ts            # Prompt 模板
-│   ├── comfy/                    # ComfyUI 客户端
-│   ├── gamma/                    # Gamma API 客户端
-│   ├── merch/                    # 商品设计
-│   │   └── adapters.ts           # ProductAdapter 接口
-│   ├── queue/                    # Inngest 客户端
-│   ├── jobs/                     # 任务仓库
-│   ├── storage/                  # 存储工具
-│   └── types.ts                  # 类型定义
-├── supabase/migrations/           # 数据库迁移
-│   ├── 001_initial_schema.sql
-│   ├── 002_knowledge_rls.sql
-│   ├── 003_artifacts_table.sql
-│   └── 004_artifacts_merch.sql
-└── public/                       # 静态资源
-```
+### Itineraries
 
-## 快速开始
+- `POST /api/itineraries/create`
+- `GET /api/itineraries/status?jobId=...`
+- `GET /api/itineraries/[id]`
 
-### 环境要求
+### Merch
 
-- Node.js 18+
-- npm / pnpm / yarn
+- `POST /api/merch/generate`
+- `GET /api/merch/status?jobId=...`
+- `GET /api/merch/[id]`
 
-### 1. 克隆项目
+### Exports
+
+- `GET /api/exports`
+- `GET /api/exports/artifacts/[id]/download`
+- `GET /api/exports/[id]` (deprecated, compatibility only)
+
+### Settings
+
+- `GET /api/settings`
+- `PATCH /api/settings`
+
+### Queue / Webhook
+
+- `GET/POST /api/inngest`
+- `GET/POST /api/webhooks/inngest`
+- `GET/POST /api/webhooks/payment`
+
+## 页面行为
+
+- `/`：重定向到 `/itinerary`
+- `/itinerary`：提交创建任务并轮询 `job` 状态，完成后读取 `GET /api/itineraries/[id]`
+- `/knowledge`：上传/列表/重索引/删除均走真实 API
+- `/exports`：读取 `GET /api/exports` 并通过 artifact 下载接口获取 signed URL
+- `/settings`：读写 `GET/PATCH /api/settings`
+- `/merch`：创建任务后轮询状态并展示签名后的图案与效果图链接
+
+## 环境变量
 
 ```bash
-git clone <repository-url>
-cd travel-planner
+# Supabase (server)
+SUPABASE_URL=...
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+
+# Supabase (browser)
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+
+# Inngest
+INNGEST_EVENT_KEY=...   # 或 INNGEST_KEY
+INNGEST_SIGNING_KEY=...
+
+# LLM
+LLM_PROVIDER=zhipu      # zhipu | stub
+ZHIPU_API_KEY=...
+
+# Embeddings
+EMBEDDING_PROVIDER=stub # stub | openai
+OPENAI_API_KEY=...      # EMBEDDING_PROVIDER=openai 时必填
+
+# Gamma
+GAMMA_API_KEY=...
+GAMMA_API_URL=...       # 可选
+
+# ComfyUI
+COMFY_API_URL=...
+COMFY_API_KEY=...
 ```
 
-### 2. 安装依赖
+> 说明：`openai` 依赖是可选路径。仅在 `EMBEDDING_PROVIDER=openai` 时需要安装并配置。
+
+## 本地开发
 
 ```bash
 npm install
-```
-
-### 3. 配置环境变量
-
-创建 `.env.local` 文件：
-
-```bash
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-
-# Inngest
-INNGEST_EVENT_KEY=your_inngest_event_key
-INNGEST_SIGNING_KEY=your_inngest_signing_key
-INNGEST_API_URL=https://www.inngest.com
-
-# LLM (智谱清言)
-ZHIPU_API_KEY=your_zhipu_api_key
-LLM_PROVIDER=zhipu  # or 'stub' for development
-
-# Gamma API (演示文稿生成)
-GAMMA_API_KEY=your_gamma_api_key
-GAMMA_API_URL=https://public-api.gamma.app  # 可选，默认值
-
-# ComfyUI (图像生成)
-COMFY_API_URL=your_comfy_api_url
-COMFY_API_KEY=your_comfy_api_key
-
-# OpenAI (可选，用于 embeddings)
-OPENAI_API_KEY=your_openai_api_key
-
-# 嵌入提供商 (stub | openai)
-EMBEDDING_PROVIDER=stub
-```
-
-### 4. 数据库设置
-
-#### 4.1 创建 Supabase 项目
-
-访问 [supabase.com](https://supabase.com) 创建新项目。
-
-#### 4.2 启用 pgvector 扩展
-
-在 Supabase SQL 编辑器中运行：
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-#### 4.3 运行迁移
-
-按顺序运行迁移文件：
-
-1. `supabase/migrations/001_initial_schema.sql` - 基础表结构
-2. `supabase/migrations/002_knowledge_rls.sql` - 知识库与 RLS
-3. `supabase/migrations/003_artifacts_table.sql` - 导出文件管理
-4. `supabase/migrations/004_artifacts_merch.sql` - 商品设计关联
-
-#### 4.4 创建存储桶
-
-在 Supabase Storage 中创建以下公共存储桶：
-
-| 桶名 | 用途 |
-|------|------|
-| `knowledge` | 知识文件（PDF/DOCX/TXT/图片）|
-| `merch` | 商品设计图片（图案、效果图）|
-| `exports` | 导出文件（PDF/PPTX）|
-
-### 5. 运行开发服务器
-
-```bash
 npm run dev
 ```
 
-访问 <http://localhost:3000>
-
-### 6. 构建
+## 质量门禁
 
 ```bash
+npm run lint
+npm run typecheck
+npm run test:api
 npm run build
-npm start
 ```
 
-## API 端点
+## 测试
 
-### 知识库 API
+本仓库已提供最小 API 集成测试基建（Vitest，路由级）：
 
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/api/knowledge/upload` | POST | 上传文件并索引 |
-| `/api/knowledge/list` | GET | 列出所有文件 |
-| `/api/knowledge/[id]` | GET | 获取文件详情 |
-| `/api/knowledge/search` | POST | RAG 语义搜索 |
-| `/api/knowledge/packs` | GET/POST | 知识包列表/创建 |
-| `/api/knowledge/packs/[id]` | GET/PATCH/DELETE | 知识包操作 |
+- `tests/api/auth-settings.test.ts`
+- `tests/api/knowledge-reindex.test.ts`
+- `tests/api/itinerary-create.test.ts`
+- `tests/api/exports-download.test.ts`
+- `tests/api/merch-status.test.ts`
 
-### 行程 API
+## 迁移验证（空库 + 增量库）
 
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/api/itineraries/create` | POST | 创建行程（异步）|
-| `/api/itineraries/[id]` | GET | 获取行程详情 |
-| `/api/itineraries/status` | POST | 批量查询任务状态 |
+- 基础校验脚本：`supabase/scripts/validate_migrations.sql`
+- 增量校验脚本：`supabase/scripts/validate_incremental_migrations.sql`
+- 执行入口：`supabase/scripts/validate_migrations.sh`
+- 验证记录：`supabase/scripts/VALIDATION_REPORT.md`
 
-### 商品 API
-
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/api/merch/generate` | POST | 生成商品设计（异步）|
-| `/api/merch/status` | POST | 批量查询任务状态 |
-
-## 数据库架构
-
-### 核心表
-
-| 表名 | 描述 |
-|------|------|
-| `users` | 用户配额管理 |
-| `jobs` | 统一任务状态追踪 |
-| `itineraries` | 研学行程 |
-| `knowledge_files` | 知识文件 |
-| `knowledge_chunks` | 文本分块（向量）|
-| `knowledge_packs` | 知识包（文件集合）|
-| `merch_designs` | 商品设计记录 |
-| `artifacts` | 导出文件统一管理 |
-
-### 安全策略
-
-- 所有表启用 **Row Level Security (RLS)**
-- 用户只能访问自己的数据
-- 服务端操作使用 `service_role` 密钥
-
-## MVP 完成标准
-
-| 功能 | 状态 |
-|------|------|
-| 用户注册/登录 | ✅ |
-| 上传文件并自动索引 | ✅ |
-| 创建知识包 | ✅ |
-| 生成研学行程 | ✅ |
-| 导出 PDF/PPTX | ✅ |
-| 生成商品设计 | ✅ |
-| 任务进度反馈 | ✅ |
-
-**当前进度: ~90%**
-
-详见 [TODO.md](./TODO.md) 获取完整功能列表和开发计划。
-
-## 开发指南
-
-### 添加新的 LLM 提供者
-
-1. 在 `lib/llm/` 创建新的提供者类
-2. 实现 `LLMProvider` 接口
-3. 在 `lib/llm/index.ts` 导出
-
-### 添加新的产品类型
-
-1. 更新 `lib/merch/adapters.ts` 中的 `ProductSpec`
-2. 添加打印区域配置到 `DEFAULT_PRINT_AREAS`
-3. 更新 `lib/comfy/client.ts` 的工作流
-
-### 运行 Inngest Dev
+示例：
 
 ```bash
-npx inngest-cli dev
+# 基础校验
+DATABASE_URL="$DB_URL" bash supabase/scripts/validate_migrations.sh
+
+# 含增量校验
+VALIDATE_INCREMENTAL=true DATABASE_URL="$DB_URL" bash supabase/scripts/validate_migrations.sh
 ```
-
-## 许可证
-
-MIT

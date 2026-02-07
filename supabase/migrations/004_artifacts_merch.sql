@@ -28,7 +28,8 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_merch_design_id ON public.artifacts(mer
 -- For merch: 'pattern', 'mockup'
 
 -- RLS Policy: Users can view their own merch artifacts
-CREATE POLICY IF NOT EXISTS "Users can view own merch artifacts"
+DROP POLICY IF EXISTS "Users can view own merch artifacts" ON public.artifacts;
+CREATE POLICY "Users can view own merch artifacts"
     ON public.artifacts FOR SELECT
     USING (
       merch_design_id IN (
@@ -37,7 +38,8 @@ CREATE POLICY IF NOT EXISTS "Users can view own merch artifacts"
     );
 
 -- RLS Policy: Service role can manage all merch artifacts
-CREATE POLICY IF NOT EXISTS "Service role can manage merch artifacts"
+DROP POLICY IF EXISTS "Service role can manage merch artifacts" ON public.artifacts;
+CREATE POLICY "Service role can manage merch artifacts"
     ON public.artifacts FOR ALL
     USING (auth.jwt() ->> 'role' = 'service_role')
     WITH CHECK (auth.jwt() ->> 'role' = 'service_role');

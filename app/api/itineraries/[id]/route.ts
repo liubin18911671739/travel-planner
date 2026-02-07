@@ -3,6 +3,48 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getSignedUrl } from '@/lib/storage/helper'
 import { EXPORT_SIGNED_URL_EXPIRES_IN } from '@/lib/storage/buckets'
 
+type RouteContext = {
+  params: Promise<{ id: string }>
+}
+
+type ArtifactRow = {
+  kind: string
+  storage_bucket: string | null
+  storage_path: string
+  file_size: number | null
+  created_at: string | null
+}
+
+type ItineraryRow = {
+  id: string
+  name: string
+  destination: string
+  duration_days: number
+  content: unknown
+  status: string
+  gamma_deck_url: string | null
+  settings: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+function isItineraryRow(value: unknown): value is ItineraryRow {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+
+  const row = value as Record<string, unknown>
+  return (
+    typeof row.id === 'string' &&
+    typeof row.name === 'string' &&
+    typeof row.destination === 'string' &&
+    typeof row.duration_days === 'number' &&
+    typeof row.status === 'string' &&
+    typeof row.created_at === 'string' &&
+    typeof row.updated_at === 'string'
+  )
+}
+
 /**
  * GET /api/itineraries/:id
  *
@@ -22,8 +64,8 @@ import { EXPORT_SIGNED_URL_EXPIRES_IN } from '@/lib/storage/buckets'
  * }
  */
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  _request: NextRequest,
+  context: RouteContext
 ) {
   try {
     // Get user from session
@@ -36,7 +78,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const itineraryId = params.id
+    const { id: itineraryId } = await context.params
 
     // Get itinerary (ensure user owns it)
     const { data: itinerary, error } = await supabase
@@ -46,7 +88,7 @@ export async function GET(
       .eq('user_id', user.id)
       .single()
 
-    if (error || !itinerary) {
+    if (error || !itinerary || !isItineraryRow(itinerary)) {
       return NextResponse.json({ error: 'Itinerary not found' }, { status: 404 })
     }
 
@@ -58,10 +100,23 @@ export async function GET(
 
     // Generate signed URLs for each artifact
     const artifactsWithUrls = await Promise.all(
-      (artifacts || []).map(async (artifact: any) => {
+      ((artifacts || []) as ArtifactRow[]).map(async (artifact) => {
         try {
+          if (!artifact.storage_bucket) {
+            throw new Error('Missing storage bucket')
+          }
+
+          const normalizedBucket = artifact.storage_bucket.toUpperCase()
+          if (
+            normalizedBucket !== 'EXPORTS' &&
+            normalizedBucket !== 'MERCH' &&
+            normalizedBucket !== 'KNOWLEDGE'
+          ) {
+            throw new Error('Unsupported storage bucket')
+          }
+
           const url = await getSignedUrl(
-            artifact.storage_bucket,
+            normalizedBucket as 'EXPORTS' | 'MERCH' | 'KNOWLEDGE',
             artifact.storage_path,
             EXPORT_SIGNED_URL_EXPIRES_IN
           )
@@ -69,14 +124,14 @@ export async function GET(
             kind: artifact.kind,
             url,
             fileSize: artifact.file_size,
-            createdAt: artifact.created_at,
+            createdAt: artifact.created_at || new Date(0).toISOString(),
           }
         } catch {
           return {
             kind: artifact.kind,
             url: null,
             fileSize: artifact.file_size,
-            createdAt: artifact.created_at,
+            createdAt: artifact.created_at || new Date(0).toISOString(),
           }
         }
       })
