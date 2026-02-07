@@ -21,7 +21,23 @@ export interface GeneratePatternOptions {
   width?: number
   height?: number
   seed?: number
+  itineraryContext?: ItineraryContextOrNull
 }
+
+/**
+ * Itinerary context for themed pattern generation.
+ */
+export interface ItineraryContext {
+  destination: string
+  highlights?: string[]
+  themes?: string[]
+  settings?: Record<string, any>
+}
+
+/**
+ * Null type for itinerary context.
+ */
+export type ItineraryContextOrNull = ItineraryContext | null | undefined
 
 /**
  * Mockup generation options.
@@ -404,29 +420,102 @@ export class ComfyClient {
    * Build a text prompt from options.
    */
   private buildPrompt(options: GeneratePatternOptions): string {
-    const keywordString = options.keywords.join(', ')
-    const styleString = {
+    let promptParts: string[] = []
+
+    // Add itinerary-themed elements if context is provided
+    if (options.itineraryContext) {
+      const ctx = options.itineraryContext
+
+      // Base travel theme
+      promptParts.push(`travel theme pattern for ${ctx.destination}`)
+
+      // Add itinerary-specific motifs
+      const motifs = this.getItineraryMotifs(ctx)
+      promptParts.push(...motifs)
+
+      // Add user keywords after destination context
+      promptParts.push(...options.keywords)
+    } else {
+      // Just use keywords if no itinerary context
+      promptParts.push(`seamless pattern of ${options.keywords.join(', ')}`)
+    }
+
+    // Add style
+    const styleString: string = {
       flat: 'flat design, vector style, minimalist',
       vintage: 'vintage style, retro, nostalgic, aged texture',
       ink: 'Chinese ink wash painting style, watercolor, brush strokes',
       modern_minimal: 'modern minimal, clean, geometric',
-    }[options.style]
+    }[options.style] || 'flat design'
+    promptParts.push(styleString)
 
-    const colorString = {
+    // Add color mood
+    const colorString: string = {
       warm: 'warm colors, orange, red, yellow tones',
       cool: 'cool colors, blue, green, purple tones',
       natural: 'natural colors, earth tones, greens and browns',
       elegant: 'elegant colors, gold, deep purple, navy',
       vibrant: 'vibrant colors, bright, saturated',
-    }[options.colorMood]
+    }[options.colorMood] || 'natural colors'
+    promptParts.push(colorString)
 
-    const densityString = {
+    // Add density
+    const densityString: string = {
       sparse: 'lots of negative space, sparse elements',
       medium: 'balanced composition',
       dense: 'intricate pattern, detailed, complex',
-    }[options.density]
+    }[options.density] || 'balanced composition'
+    promptParts.push(densityString)
 
-    return `seamless pattern of ${keywordString}, ${styleString}, ${colorString}, ${densityString}, high quality, detailed`
+    // Quality tag
+    promptParts.push('high quality, detailed')
+
+    return promptParts.join(', ')
+  }
+
+  /**
+   * Get itinerary-specific motifs for pattern generation.
+   */
+  private getItineraryMotifs(context: ItineraryContextOrNull): string[] {
+    const motifs: string[] = []
+
+    // Return empty motifs if context is null
+    if (!context) {
+      return motifs
+    }
+
+    // Base travel motifs (always included for itinerary patterns)
+    motifs.push(
+      'subtle map contour lines',
+      'compass icons',
+      'travel stamps',
+      'educational symbols'
+    )
+
+    // Add highlights-specific motifs
+    if (context.highlights) {
+      for (const highlight of context.highlights) {
+        const lower = highlight.toLowerCase()
+
+        if (lower.includes('museum') || lower.includes('博物馆')) {
+          motifs.push('museum silhouette', 'classical architecture', 'column icons')
+        }
+        if (lower.includes('nature') || lower.includes('park') || lower.includes('自然') || lower.includes('公园')) {
+          motifs.push('mountain silhouette', 'leaf patterns', 'tree outlines')
+        }
+        if (lower.includes('temple') || lower.includes('history') || lower.includes('寺庙') || lower.includes('历史')) {
+          motifs.push('traditional temple silhouette', 'ancient architecture', 'historic elements')
+        }
+        if (lower.includes('art') || lower.includes('艺术')) {
+          motifs.push('paintbrush icons', 'palette symbols', 'artistic elements')
+        }
+        if (lower.includes('water') || lower.includes('river') || lower.includes('lake')) {
+          motifs.push('wave patterns', 'water ripples')
+        }
+      }
+    }
+
+    return motifs
   }
 
   /**

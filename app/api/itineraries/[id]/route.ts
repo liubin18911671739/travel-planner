@@ -6,7 +6,7 @@ import { EXPORT_SIGNED_URL_EXPIRES_IN } from '@/lib/storage/buckets'
 /**
  * GET /api/itineraries/:id
  *
- * Get full itinerary details.
+ * Get full itinerary details including artifacts.
  *
  * Response:
  * {
@@ -16,7 +16,8 @@ import { EXPORT_SIGNED_URL_EXPIRES_IN } from '@/lib/storage/buckets'
  *   durationDays: number
  *   content: { days: [...] }
  *   status: string
- *   exportUrl: string (signed URL)
+ *   gammaDeckUrl: string
+ *   artifacts: [{ kind, url }]  // PDF, PPTX download links
  *   createdAt: string
  * }
  */
@@ -49,22 +50,37 @@ export async function GET(
       return NextResponse.json({ error: 'Itinerary not found' }, { status: 404 })
     }
 
-    // Generate signed URL for export if exists
-    let exportUrl = null
-    if (itinerary.export_url) {
-      // Convert storage path to signed URL
-      try {
-        // Assuming export_url is a storage path
-        exportUrl = await getSignedUrl(
-          'EXPORTS',
-          itinerary.export_url.replace('exports/', ''),
-          EXPORT_SIGNED_URL_EXPIRES_IN
-        )
-      } catch {
-        // If signed URL fails, return the original URL
-        exportUrl = itinerary.export_url
-      }
-    }
+    // Get artifacts with signed URLs
+    const { data: artifacts } = await supabase
+      .from('artifacts')
+      .select('*')
+      .eq('itinerary_id', itineraryId)
+
+    // Generate signed URLs for each artifact
+    const artifactsWithUrls = await Promise.all(
+      (artifacts || []).map(async (artifact: any) => {
+        try {
+          const url = await getSignedUrl(
+            artifact.storage_bucket,
+            artifact.storage_path,
+            EXPORT_SIGNED_URL_EXPIRES_IN
+          )
+          return {
+            kind: artifact.kind,
+            url,
+            fileSize: artifact.file_size,
+            createdAt: artifact.created_at,
+          }
+        } catch {
+          return {
+            kind: artifact.kind,
+            url: null,
+            fileSize: artifact.file_size,
+            createdAt: artifact.created_at,
+          }
+        }
+      })
+    )
 
     return NextResponse.json({
       id: itinerary.id,
@@ -74,7 +90,7 @@ export async function GET(
       content: itinerary.content,
       status: itinerary.status,
       gammaDeckUrl: itinerary.gamma_deck_url,
-      exportUrl,
+      artifacts: artifactsWithUrls,
       settings: itinerary.settings,
       createdAt: itinerary.created_at,
       updatedAt: itinerary.updated_at,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Check,
   ChevronLeft,
@@ -28,20 +28,21 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Checkbox } from '@/components/ui/checkbox'
 import { JobStatusCard } from '@/components/job-status-card'
 import { cn } from '@/lib/utils'
+import type { Job, JobLog } from '@/lib/types'
 
-type ProductType = 'cup' | 'phone-case' | 't-shirt'
-type StyleLock = 'flat' | 'vintage' | 'ink' | 'modern-minimal'
+type ProductType = 'mug' | 'phone_case' | 'tshirt'
+type StyleLock = 'flat' | 'vintage' | 'ink' | 'modern_minimal'
 type DensityLevel = 'sparse' | 'medium' | 'dense'
 
 const PRODUCT_TYPES = [
-  { id: 'cup', name: '水杯', icon: '🥤', sizes: ['350ml', '500ml', '750ml'] },
+  { id: 'mug', name: '水杯', icon: '🥤', sizes: ['350ml', '500ml', '750ml'] },
   {
-    id: 'phone-case',
+    id: 'phone_case',
     name: '手机壳',
     icon: '📱',
     sizes: ['iPhone 14', 'iPhone 15', 'Samsung S24'],
   },
-  { id: 't-shirt', name: '体恤', icon: '👕', sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
+  { id: 'tshirt', name: '体恤', icon: '👕', sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
 ]
 
 const COLOR_MOODS = [
@@ -56,12 +57,12 @@ const STYLE_LOCKS = [
   { value: 'flat', label: '扁平风格', description: '简洁现代' },
   { value: 'vintage', label: '复古风格', description: '怀旧经典' },
   { value: 'ink', label: '水墨风格', description: '中国风' },
-  { value: 'modern-minimal', label: '极简风格', description: '简约时尚' },
+  { value: 'modern_minimal', label: '极简风格', description: '简约时尚' },
 ]
 
 export default function MerchStudioPage() {
   const [currentStep, setCurrentStep] = useState(1)
-  const [productType, setProductType] = useState<ProductType>('cup')
+  const [productType, setProductType] = useState<ProductType>('mug')
   const [selectedSize, setSelectedSize] = useState<string>('')
   const [themeKeywords, setThemeKeywords] = useState('')
   const [colorMood, setColorMood] = useState('warm')
@@ -70,7 +71,56 @@ export default function MerchStudioPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [isGenerated, setIsGenerated] = useState(false)
   const [autoSave, setAutoSave] = useState(false)
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [currentJob, setCurrentJob] = useState<Job | null>(null)
+  const [designId, setDesignId] = useState<string | null>(null)
   const { toast } = useToast()
+
+  // Poll job status when generating
+  useEffect(() => {
+    if (!jobId || !isGenerating) return
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/merch/status?jobId=${jobId}`)
+        if (!response.ok) return
+
+        const data = await response.json()
+        setCurrentJob({
+          id: data.jobId,
+          name: '商品设计生成',
+          status: data.status,
+          progress: data.progress,
+          logs: data.logs || [],
+          createdAt: '',
+          updatedAt: '',
+        })
+
+        if (data.status === 'done') {
+          clearInterval(pollInterval)
+          setIsGenerating(false)
+          setIsGenerated(true)
+          setDesignId(data.result?.designId || null)
+          toast({
+            title: '生成成功',
+            description: '图案已生成，请查看预览',
+          })
+        } else if (data.status === 'failed') {
+          clearInterval(pollInterval)
+          setIsGenerating(false)
+          toast({
+            title: '生成失败',
+            description: data.error || '请重试',
+            variant: 'destructive',
+          })
+        }
+      } catch (error) {
+        console.error('Failed to poll job status:', error)
+      }
+    }, 2000)
+
+    return () => clearInterval(pollInterval)
+  }, [jobId, isGenerating, toast])
 
   const steps = [
     { number: 1, title: '选择产品', description: '产品类型和尺寸' },
@@ -78,21 +128,52 @@ export default function MerchStudioPage() {
     { number: 3, title: '生成预览', description: '预览和下载' },
   ]
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setIsGenerating(true)
-    setTimeout(() => {
-      setIsGenerating(false)
-      setIsGenerated(true)
-      toast({
-        title: '生成成功',
-        description: '图案已生成，请查看预览',
+    setCurrentJob(null)
+    setDesignId(null)
+
+    const keywords = themeKeywords
+      .split(',')
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0)
+
+    try {
+      const response = await fetch('/api/merch/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          productType,
+          size: selectedSize,
+          themeKeywords: keywords,
+          colorMood,
+          density,
+          styleLock,
+        }),
       })
-    }, 3000)
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || error.message || '生成请求失败')
+      }
+
+      const data = await response.json()
+      setJobId(data.jobId)
+    } catch (error) {
+      setIsGenerating(false)
+      toast({
+        title: '请求失败',
+        description: (error as Error).message,
+        variant: 'destructive',
+      })
+    }
   }
 
-  const handleRegenerate = () => {
+  const handleRegenerate = async () => {
     setIsGenerated(false)
-    handleGenerate()
+    await handleGenerate()
   }
 
   const handleSaveToLibrary = () => {
@@ -492,41 +573,20 @@ export default function MerchStudioPage() {
                 </Card>
               )}
 
-              {isGenerating && (
+              {isGenerating && currentJob && (
+                <JobStatusCard job={currentJob} />
+              )}
+
+              {isGenerating && !currentJob && (
                 <JobStatusCard
                   job={{
-                    id: 'merch-gen-1',
-                    name: '图案生成任务',
+                    id: 'pending',
+                    name: '商品设计生成',
                     status: 'running',
-                    progress: 65,
-                    logs: [
-                      {
-                        id: '1',
-                        timestamp: '10:23:45',
-                        message: '正在分析主题关键词...',
-                        level: 'info',
-                      },
-                      {
-                        id: '2',
-                        timestamp: '10:23:47',
-                        message: '生成图案元素...',
-                        level: 'info',
-                      },
-                      {
-                        id: '3',
-                        timestamp: '10:23:50',
-                        message: '应用色彩基调...',
-                        level: 'info',
-                      },
-                      {
-                        id: '4',
-                        timestamp: '10:23:52',
-                        message: '渲染无缝图案...',
-                        level: 'info',
-                      },
-                    ],
-                    createdAt: '2024-02-06T10:23:45Z',
-                    updatedAt: '2024-02-06T10:23:52Z',
+                    progress: 0,
+                    logs: [],
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
                   }}
                 />
               )}

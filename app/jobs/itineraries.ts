@@ -6,37 +6,66 @@ import { createRAGRetrieval } from '@/lib/rag/retrieval'
 import { createEmbeddingsProvider } from '@/lib/embeddings/stub'
 import { uploadFile } from '@/lib/storage/helper'
 import { BUCKETS } from '@/lib/storage/buckets'
+import { createLLMProviderFromEnv } from '@/lib/llm'
+import {
+  buildItineraryPrompt,
+  extractJSONFromResponse,
+  isValidItineraryContent,
+  type ItineraryPromptInput,
+} from '@/lib/llm/prompts'
 
 /**
- * LLM call for itinerary generation.
- * In production, integrate with OpenAI, Anthropic, or similar.
+ * LLM call for itinerary generation using Zhipu AI (智谱清言).
+ *
+ * Integrates with RAG-retrieved knowledge to generate personalized study travel itineraries.
  */
 async function generateItineraryContent(
   destination: string,
   durationDays: number,
-  knowledgeContext: string
+  knowledgeContext: string,
+  settings?: Record<string, any>
 ): Promise<any> {
-  // Stub implementation - replace with actual LLM call
-  // In production:
-  // const openai = new OpenAI()
-  // const response = await openai.chat.completions.create({...})
+  // Create LLM provider using environment configuration
+  const llm = createLLMProviderFromEnv()
 
-  return {
-    days: Array.from({ length: durationDays }, (_, i) => ({
-      day: i + 1,
-      title: `第${i + 1}天：${destination}探索`,
-      description: `探索${destination}的精彩内容...`,
-      location: destination,
-      duration: '8小时',
-      activities: [
-        { time: '09:00', activity: '早餐', location: '酒店' },
-        { time: '10:00', activity: '参观景点', location: `${destination}景区` },
-        { time: '12:00', activity: '午餐', location: '当地餐厅' },
-        { time: '14:00', activity: '文化活动', location: '文化中心' },
-        { time: '18:00', activity: '晚餐', location: '特色餐厅' },
-      ],
-    })),
+  // Build prompt using template
+  const promptInput: ItineraryPromptInput = {
+    destination,
+    durationDays,
+    knowledgeContext,
+    settings,
   }
+
+  const messages = buildItineraryPrompt(promptInput)
+
+  // Call LLM
+  const response = await llm.chat(messages, {
+    temperature: 0.7,
+    top_p: 0.9,
+  })
+
+  // Extract and parse JSON response
+  let parsedContent: any
+
+  try {
+    // Extract JSON from response (handles markdown code blocks)
+    const jsonContent = extractJSONFromResponse(response.content)
+    parsedContent = JSON.parse(jsonContent)
+  } catch (error) {
+    throw new Error(
+      `Failed to parse LLM response as JSON: ${error instanceof Error ? error.message : String(error)}\n` +
+      `Response content: ${response.content.slice(0, 500)}...`
+    )
+  }
+
+  // Validate response structure
+  if (!isValidItineraryContent(parsedContent)) {
+    throw new Error(
+      'Invalid LLM response: missing or invalid itinerary structure'
+    )
+  }
+
+  return parsedContent
 }
 
 /**
@@ -91,13 +120,13 @@ export const generateItinerary = inngest.createFunction(
 
     // Step 1: Initialize
     await step.run('initialize', async () => {
-      await jobRepository.updateStatus(jobId, 'running', 5)
+      await jobRepository.updateStatus(jobId, 'running', 10)
       await jobRepository.logInfo(jobId, '开始生成行程...')
     })
 
     // Step 2: Retrieve relevant knowledge using RAG
     const { knowledgeContext } = await step.run('retrieve-knowledge', async () => {
-      await jobRepository.updateStatus(jobId, 'running', 10)
+      await jobRepository.updateStatus(jobId, 'running', 30)
       await jobRepository.logInfo(jobId, '检索相关知识库内容...')
 
       if (knowledgePackIds.length === 0) {
@@ -116,13 +145,14 @@ export const generateItinerary = inngest.createFunction(
 
     // Step 3: Generate itinerary content using LLM
     const { itineraryContent } = await step.run('generate-content', async () => {
-      await jobRepository.updateStatus(jobId, 'running', 30)
+      await jobRepository.updateStatus(jobId, 'running', 60)
       await jobRepository.logInfo(jobId, 'AI 正在生成行程内容...')
 
       const content = await generateItineraryContent(
         destination,
         durationDays,
-        knowledgeContext
+        knowledgeContext,
+        settings
       )
 
       // Store content in database
@@ -136,7 +166,7 @@ export const generateItinerary = inngest.createFunction(
 
     // Step 4: Create Gamma presentation
     const { gammaResult } = await step.run('create-gamma-deck', async () => {
-      await jobRepository.updateStatus(jobId, 'running', 50)
+      await jobRepository.updateStatus(jobId, 'running', 80)
       await jobRepository.logInfo(jobId, '创建演示文稿...')
 
       const gamma = new GammaClient()
@@ -166,25 +196,56 @@ export const generateItinerary = inngest.createFunction(
       return { gammaResult: deck }
     })
 
-    // Step 5: Export and persist to Storage
-    const { exportPath } = await step.run('persist-export', async () => {
-      await jobRepository.updateStatus(jobId, 'running', 70)
-      await jobRepository.logInfo(jobId, '导出并保存文件...')
+    // Step 5: Export PDF and PPTX, persist to Storage with artifacts table
+    const { artifacts } = await step.run('persist-exports', async () => {
+      await jobRepository.updateStatus(jobId, 'running', 90)
+      await jobRepository.logInfo(jobId, '导出 PDF 和 PPTX...')
 
       const gamma = new GammaClient()
-      const exportData = await gamma.exportDeck(gammaResult.deckId, 'pdf')
 
-      // Upload to Storage
-      const path = `itineraries/${itineraryId}.pdf`
-      await uploadFile('EXPORTS', path, exportData.buffer, 'application/pdf')
+      // Export PDF
+      await jobRepository.logInfo(jobId, '正在导出 PDF...')
+      const pdfData = await gamma.exportDeck(gammaResult.deckId, 'pdf')
+      const pdfPath = `itineraries/${itineraryId}.pdf`
+      await uploadFile('EXPORTS', pdfPath, pdfData.buffer, 'application/pdf')
 
-      // Update itinerary with export path
+      // Export PPTX
+      await jobRepository.logInfo(jobId, '正在导出 PPTX...')
+      const pptxData = await gamma.exportDeck(gammaResult.deckId, 'pptx')
+      const pptxPath = `itineraries/${itineraryId}.pptx`
+      await uploadFile(
+        'EXPORTS',
+        pptxPath,
+        pptxData.buffer,
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+      )
+
+      // Store artifacts in database (uses UPSERT for idempotency)
+      const artifactRecords = [
+        {
+          itinerary_id: itineraryId,
+          kind: 'pdf',
+          storage_path: pdfPath,
+          storage_bucket: 'EXPORTS',
+          file_size: pdfData.buffer.length,
+          metadata: { format: 'pdf', mime_type: 'application/pdf' },
+        },
+        {
+          itinerary_id: itineraryId,
+          kind: 'pptx',
+          storage_path: pptxPath,
+          storage_bucket: 'EXPORTS',
+          file_size: pptxData.buffer.length,
+          metadata: { format: 'pptx', mime_type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
+        },
+      ]
+
+      // Upsert artifacts (handles retries safely)
       await (supabaseAdmin
-        .from('itineraries') as any)
-        .update({ export_url: path })
-        .eq('id', itineraryId)
+        .from('artifacts') as any)
+        .upsert(artifactRecords, { onConflict: 'itinerary_id,kind' })
 
-      return { exportPath: path }
+      return { artifacts: artifactRecords }
     })
 
     // Step 6: Finalize
@@ -198,14 +259,14 @@ export const generateItinerary = inngest.createFunction(
       await jobRepository.updateStatus(jobId, 'done', 100, {
         itineraryId,
         gammaDeckUrl: gammaResult.deckUrl,
-        exportPath,
+        artifacts: artifacts.map(a => ({ kind: a.kind, storage_path: a.storage_path })),
       })
     })
 
     return {
       itineraryId,
       gammaDeckUrl: gammaResult.deckUrl,
-      exportPath,
+      artifacts,
     }
   }
 )
