@@ -21,7 +21,7 @@ import {
   XCircle,
   RefreshCw,
 } from 'lucide-react'
-import JobStatusCard from '@/components/JobStatusCard'
+import { JobStatusCard } from '@/components/job-status-card'
 
 type FilterType = 'all' | 'running' | 'done' | 'failed'
 

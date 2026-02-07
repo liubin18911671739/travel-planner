@@ -1,4 +1,8 @@
 import { EmbeddingsProvider, Embedding, EmbeddingsProviderConfig } from './provider'
+// @ts-ignore - openai is an optional dependency
+import { createOpenAIEmbeddingsProviderSync, type OpenAIEmbeddingsConfig } from './openai'
+
+export type EmbeddingProviderType = 'stub' | 'openai' | 'cohere'
 
 /**
  * Stub implementation of EmbeddingsProvider for development and testing.
@@ -76,19 +80,19 @@ export class StubEmbeddingsProvider implements EmbeddingsProvider {
 
 /**
  * Factory function to create an embeddings provider.
- * In production, this would switch based on configuration.
  *
  * @param type - Provider type ('stub', 'openai', 'cohere', etc.)
  * @param config - Provider configuration
  */
 export function createEmbeddingsProvider(
-  type: 'stub' | 'openai' | 'cohere' = 'stub',
-  config?: EmbeddingsProviderConfig
+  type: EmbeddingProviderType = 'stub',
+  config?: EmbeddingsProviderConfig | OpenAIEmbeddingsConfig
 ): EmbeddingsProvider {
   switch (type) {
     case 'stub':
       return new StubEmbeddingsProvider(config)
-    // Future: add OpenAI, Cohere, etc.
+    case 'openai':
+      return createOpenAIEmbeddingsProviderSync(config as OpenAIEmbeddingsConfig)
     default:
       return new StubEmbeddingsProvider(config)
   }

@@ -100,9 +100,9 @@ export async function POST(request: NextRequest) {
         file_size: file.size,
         storage_path: storagePath,
         status: 'pending',
-      })
+      } as any)
       .select('id')
-      .single()
+      .single() as any
 
     if (dbError) {
       // Clean up uploaded file
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Send event to trigger indexing
-    await inngestEvents.knowledge.index({
+    await inngestEvents.knowledge.indexRequested({
       jobId,
       fileId,
       userId,

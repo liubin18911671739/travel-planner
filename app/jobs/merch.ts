@@ -5,6 +5,8 @@ import { ComfyClient } from '@/lib/comfy/client'
 import { uploadFile } from '@/lib/storage/helper'
 import { BUCKETS } from '@/lib/storage/buckets'
 
+type ViewType = 'front' | 'side' | 'back' | 'context'
+
 /**
  * Inngest function: Generate merchandise design.
  *
@@ -59,10 +61,10 @@ export const generateMerch = inngest.createFunction(
     const { views } = await step.run('determine-views', async () => {
       await jobRepository.updateStatus(jobId, 'running', 30)
 
-      const viewMap: Record<string, Array<'front' | 'side' | 'context'>> = {
+      const viewMap: Record<string, ViewType[]> = {
         mug: ['front', 'side', 'context'],
-        phone_case: ['front', 'back', 'context'],
-        tshirt: ['front', 'back', 'context'],
+        phone_case: ['front', 'side', 'back', 'context'],
+        tshirt: ['front', 'side', 'back', 'context'],
       }
 
       return { views: viewMap[productType] || ['front'] }
@@ -82,7 +84,7 @@ export const generateMerch = inngest.createFunction(
       const results = await comfy.generateMockups({
         patternImageUrl: patternUrl,
         productType: productType as any,
-        views,
+        views: views as any,
       })
 
       return { mockupResults: results }
@@ -98,7 +100,13 @@ export const generateMerch = inngest.createFunction(
       for (let i = 0; i < mockupResults.length; i++) {
         const mockup = mockupResults[i]
         const path = `merch/mockups/${designId}_${views[i]}.png`
-        await uploadFile('MERCH', path, mockup.imageBuffer, 'image/png')
+
+        // Convert Buffer-like object to Buffer if needed
+        const buffer = Buffer.isBuffer(mockup.imageBuffer)
+          ? mockup.imageBuffer
+          : Buffer.from(mockup.imageBuffer as any)
+
+        await uploadFile('MERCH', path, buffer, 'image/png')
         paths.push(path)
       }
 
@@ -107,8 +115,8 @@ export const generateMerch = inngest.createFunction(
 
     // Step 6: Finalize
     await step.run('finalize', async () => {
-      await supabaseAdmin
-        .from('merch_designs')
+      await (supabaseAdmin
+        .from('merch_designs') as any)
         .update({
           pattern_storage_path: patternPath,
           mockup_storage_paths: mockupPaths,

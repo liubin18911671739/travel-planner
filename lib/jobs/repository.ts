@@ -103,7 +103,7 @@ export class JobRepository {
         status: 'pending',
         progress: 0,
         metadata: options.metadata || {},
-      })
+      } as any)
       .select('id')
       .single()
 
@@ -115,7 +115,7 @@ export class JobRepository {
           .from('jobs')
           .select('id')
           .eq('idempotency_key', options.idempotencyKey)
-          .single()
+          .single() as any
 
         if (existing.data) {
           return existing.data.id
@@ -124,7 +124,7 @@ export class JobRepository {
       throw new JobError(`Failed to create job: ${error.message}`, error.code)
     }
 
-    return data.id
+    return (data as any)?.id
   }
 
   /**
@@ -260,8 +260,8 @@ export class JobRepository {
       }
     }
 
-    const { error } = await supabaseAdmin
-      .from('jobs')
+    const { error } = await (supabaseAdmin
+      .from('jobs') as any)
       .update(updates)
       .eq('id', jobId)
 
@@ -306,7 +306,7 @@ export class JobRepository {
         level,
         message,
         metadata: metadata || {},
-      })
+      } as any)
 
     if (error) {
       throw new JobError(`Failed to add job log: ${error.message}`)

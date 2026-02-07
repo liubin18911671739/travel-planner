@@ -11,7 +11,7 @@ let inngestHandler: ReturnType<typeof serve> | null = null
 function getHandler() {
   if (!inngestHandler) {
     // Lazy load job functions to avoid build-time Inngest client initialization
-    const { indexKnowledge } = require('./knowledge')
+    const { indexKnowledge, deleteKnowledge } = require('./knowledge')
     const { generateItinerary } = require('./itineraries')
     const { generateMerch } = require('./merch')
 
@@ -20,6 +20,7 @@ function getHandler() {
       client: inngest,
       functions: [
         indexKnowledge,
+        deleteKnowledge,
         generateItinerary,
         generateMerch,
       ],

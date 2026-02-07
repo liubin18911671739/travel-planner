@@ -77,8 +77,10 @@ export async function sendEvent(
  */
 export const inngestEvents = {
   knowledge: {
-    index: (data: { jobId: string; fileId: string; userId: string }) =>
-      sendEvent('knowledge/index', data),
+    indexRequested: (data: { jobId: string; fileId: string; userId: string }) =>
+      sendEvent('knowledge/index.requested', data),
+    deleteRequested: (data: { fileId: string; userId: string }) =>
+      sendEvent('knowledge/delete.requested', data),
   },
   itineraries: {
     generate: (data: {

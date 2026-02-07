@@ -213,7 +213,7 @@ export class ComfyClient {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const status = await this.getPromptStatus(promptId)
 
-      if (status.status === 'completed' && status.outputs?.length >= expectedCount) {
+      if (status.status === 'completed' && status.outputs && status.outputs.length >= expectedCount) {
         // Download all generated images
         const results = await Promise.all(
           status.outputs.slice(0, expectedCount).map(async (output) => {

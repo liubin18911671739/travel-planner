@@ -126,8 +126,8 @@ export const generateItinerary = inngest.createFunction(
       )
 
       // Store content in database
-      await supabaseAdmin
-        .from('itineraries')
+      await (supabaseAdmin
+        .from('itineraries') as any)
         .update({ content })
         .eq('id', itineraryId)
 
@@ -155,8 +155,8 @@ export const generateItinerary = inngest.createFunction(
       })
 
       // Update itinerary with Gamma info
-      await supabaseAdmin
-        .from('itineraries')
+      await (supabaseAdmin
+        .from('itineraries') as any)
         .update({
           gamma_deck_id: deck.deckId,
           gamma_deck_url: deck.deckUrl,
@@ -179,8 +179,8 @@ export const generateItinerary = inngest.createFunction(
       await uploadFile('EXPORTS', path, exportData.buffer, 'application/pdf')
 
       // Update itinerary with export path
-      await supabaseAdmin
-        .from('itineraries')
+      await (supabaseAdmin
+        .from('itineraries') as any)
         .update({ export_url: path })
         .eq('id', itineraryId)
 
@@ -189,8 +189,8 @@ export const generateItinerary = inngest.createFunction(
 
     // Step 6: Finalize
     await step.run('finalize', async () => {
-      await supabaseAdmin
-        .from('itineraries')
+      await (supabaseAdmin
+        .from('itineraries') as any)
         .update({ status: 'ready' })
         .eq('id', itineraryId)
 

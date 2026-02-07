@@ -48,6 +48,32 @@ export interface KnowledgePack {
   createdAt: string
 }
 
+/**
+ * RAG retrieval result types.
+ */
+export interface RetrievedChunk {
+  id: string
+  fileId: string
+  fileName?: string
+  content: string
+  metadata: Record<string, any>
+  similarity: number
+}
+
+export interface Citation {
+  chunkId: string
+  fileId: string
+  fileName: string
+  similarity: number
+}
+
+export interface RAGSearchResult {
+  query: string
+  chunks: RetrievedChunk[]
+  citations: Citation[]
+  context?: string
+}
+
 export interface MerchandiseTemplate {
   id: string
   name: string

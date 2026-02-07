@@ -127,9 +127,9 @@ export async function POST(request: NextRequest) {
         density,
         style_lock: styleLock,
         status: 'generating',
-      })
+      } as any)
       .select('id')
-      .single()
+      .single() as any
 
     if (designError) {
       throw designError
@@ -152,8 +152,8 @@ export async function POST(request: NextRequest) {
     })
 
     // Update design with job reference
-    await supabaseAdmin
-      .from('merch_designs')
+    await (supabaseAdmin
+      .from('merch_designs') as any)
       .update({ job_id: jobId })
       .eq('id', designId)
 
