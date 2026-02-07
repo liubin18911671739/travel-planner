@@ -170,3 +170,40 @@ DATABASE_URL="$DB_URL" bash supabase/scripts/validate_migrations.sh
 # 含增量校验
 VALIDATE_INCREMENTAL=true DATABASE_URL="$DB_URL" bash supabase/scripts/validate_migrations.sh
 ```
+
+
+`.env.example` 是项目环境变量模板，作用是告诉你“这个项目运行/构建需要哪些配置”。
+
+当前文件分 6 组：
+
+1. Supabase 服务端  
+- `SUPABASE_URL`: Supabase 项目 URL  
+- `SUPABASE_ANON_KEY`: 服务端用的 anon key（项目里 server client 读取它）  
+- `SUPABASE_SERVICE_ROLE_KEY`: 管理端 key（给后台写库、绕过 RLS 的 admin client 用）
+
+2. Supabase 前端  
+- `NEXT_PUBLIC_SUPABASE_URL`: 浏览器端 Supabase URL  
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: 浏览器端 anon key
+
+3. Inngest  
+- `INNGEST_EVENT_KEY` / `INNGEST_KEY`: 事件发送 key，二选一即可  
+- `INNGEST_SIGNING_KEY`: Inngest 签名校验 key
+
+4. LLM  
+- `LLM_PROVIDER`: `zhipu` 或 `stub`  
+- `ZHIPU_API_KEY`: 选择 `zhipu` 时必填
+
+5. Embedding  
+- `EMBEDDING_PROVIDER`: `openai` 或 `stub`  
+- `OPENAI_API_KEY`: 选择 `openai` 时必填
+
+6. Gamma / ComfyUI  
+- `GAMMA_API_KEY`, `GAMMA_API_URL`  
+- `COMFY_API_URL`, `COMFY_API_KEY`
+
+使用方式：
+1. 复制 `.env.example` 为 `.env.local`  
+2. 按实际环境填值  
+3. 不要把 `.env.local` 提交到仓库（保留模板 `.env.example` 即可）
+
+如果你要，我可以下一步帮你把每个变量映射到具体代码文件位置（例如在哪个 route/job/client 读取）。

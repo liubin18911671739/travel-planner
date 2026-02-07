@@ -12,6 +12,9 @@ export {
   type GammaDeck,
   type GammaExportResult,
   type DeckStatus,
+  type GammaGenerationPayload,
+  type GammaGenerationStatus,
+  type GammaTheme,
 } from './client'
 
 export { GammaError } from './client'

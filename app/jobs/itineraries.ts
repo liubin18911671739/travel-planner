@@ -239,16 +239,26 @@ export const generateItinerary = inngest.createFunction(
       await jobRepository.logInfo(jobId, '导出 PDF 和 PPTX...')
 
       const gamma = new GammaClient()
+      const slides = convertItineraryToSlides({
+        destination,
+        durationDays,
+        days: itineraryContent.days,
+      })
+      const deckOptions = {
+        title: `${destination} ${durationDays}日研学行程`,
+        description: `为期${durationDays}天的${destination}深度研学体验`,
+        content: slides,
+      }
 
       // Export PDF
       await jobRepository.logInfo(jobId, '正在导出 PDF...')
-      const pdfData = await gamma.exportDeck(gammaResult.deckId, 'pdf')
+      const pdfData = await gamma.exportFromContent(deckOptions, 'pdf')
       const pdfPath = `itineraries/${itineraryId}.pdf`
       await uploadFile('EXPORTS', pdfPath, pdfData.buffer, 'application/pdf')
 
       // Export PPTX
       await jobRepository.logInfo(jobId, '正在导出 PPTX...')
-      const pptxData = await gamma.exportDeck(gammaResult.deckId, 'pptx')
+      const pptxData = await gamma.exportFromContent(deckOptions, 'pptx')
       const pptxPath = `itineraries/${itineraryId}.pptx`
       await uploadFile(
         'EXPORTS',
